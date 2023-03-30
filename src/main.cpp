@@ -16,7 +16,7 @@ enum states {NORMAL, ALARM, PASSIVE, INC_THRES_NORMAL, DEC_THRES_NORMAL, INC_THR
 states main_state = NORMAL;
 
 // Button states for debouncing
-enum button_states {NOT_PRESSED, BOUNCE, PRESSED};
+enum button_states {NOT_PRESSED, BOUNCE, PRESSED, FALLING_EDGE, RISING_EDGE};
 
 // Alarm button variables
 button_states alarm_button = NOT_PRESSED;
@@ -86,17 +86,14 @@ float current_measurement = 0;
 int measure_count = 0;
 // unsigned long measurement_interval = 1000; // ms
 
-// ----- DECLARE FUNCTIONS
-// Button test functions
-void simple_read_button();
-void print_button_states();
-void check_button_pressed();
+// Test variables
+states test_prev_main_state = NORMAL;
 
+// ----- DECLARE FUNCTIONS
 // Button FSM functions
 void fsm_alarm_button();
 void fsm_inc_button();
 void fsm_dec_button();
-void fsm_trigger_button();
 
 // Main FSM functions
 void determine_state();
@@ -104,6 +101,10 @@ void FSM();
 
 // Measurement functions
 bool is_above_threshold();
+
+// Test function
+void fsm_trigger_button();
+void print_main_state(states main_state);
 
 // ----- SETUP
 void setup() {
@@ -118,68 +119,63 @@ void setup() {
 // ----- LOOP
 void loop() {
 
+    // Store previous states for printing test results
+    test_prev_main_state = main_state;
+
     // Check and cycle button fsm
     fsm_alarm_button();
     fsm_inc_button();
     fsm_dec_button();
     fsm_trigger_button();
 
-    check_button_pressed();
     determine_state();
     FSM();
     
+    // Enable manual alarm triggering for testing 
     if (trig_button == PRESSED) {
         if (main_state != PASSIVE) {
             main_state = ALARM;
         }
     }
 
-    Serial.println(main_state);
+    if (test_prev_main_state != main_state) {
+        print_main_state(main_state);
+    }
     
-    delay(200);
+    // delay(200);
 }
 
-void simple_read_button() {
-
-    alarm_button_val = digitalRead(ALARM_BUTTON);
-    inc_button_val = digitalRead(INC_BUTTON);
-    dec_button_val = digitalRead(DEC_BUTTON);
-    return;
-}
-
-void print_button_states() {
-
-    Serial.print("ALARM BUTTON STATE: ");
-    Serial.println(alarm_button);
-    Serial.print("INCREASE BUTTON STATE: ");
-    Serial.println(inc_button);
-    Serial.print("DECREASE BUTTON STATE: ");
-    Serial.println(dec_button);
-    return;
-}
-
-void check_button_pressed() {
-
-    if (alarm_button == PRESSED) {
-        Serial.println("ALARM BUTTON PRESSED");
+// ------ TESTING FUNCTIONS
+void print_main_state(states state) {
+    switch (state) {
+        case NORMAL:
+            Serial.println("NORMAL");
+            break;
+        case ALARM:
+            Serial.println("ALARM");
+            break;
+        case PASSIVE:
+            Serial.println("PASSIVE");
+            break;
+        case INC_THRES_NORMAL:
+            Serial.println("INC_THRES_NORMAL");
+            break;
+        case DEC_THRES_NORMAL:
+            Serial.println("DEC_THRES_NORMAL");
+            break;
+        case INC_THRES_PASSIVE:
+            Serial.println("INC_THRES_PASSIVE");
+            break;
+        case DEC_THRES_PASSIVE:
+            Serial.println("DEC_THRES_PASSIVE");
+            break;
     }
-    if (inc_button == PRESSED) {
-        Serial.println("INCREASE BUTTON PRESSED");
-    }
-    if (dec_button == PRESSED) {
-        Serial.println("DECREASE BUTTON PRESSED");
-    }
-    if (trig_button == PRESSED) {
-        Serial.println("TRIGGER BUTTON PRESSED");
-    }
-    return;
 }
 
 // ------ MAIN FSM
-
 void determine_state() {
 
-    if (alarm_button == PRESSED) {
+    if (alarm_button == FALLING_EDGE) {
         if ((main_state == NORMAL) || (main_state == ALARM)) {
             main_state = PASSIVE;
         }
@@ -188,7 +184,7 @@ void determine_state() {
         }
     }
 
-    if (inc_button == PRESSED) {
+    if (inc_button == FALLING_EDGE) {
         if (main_state == NORMAL) {
             main_state = INC_THRES_NORMAL;
         }
@@ -197,7 +193,7 @@ void determine_state() {
         }
     }
 
-    if (dec_button == PRESSED) {
+    if (dec_button == FALLING_EDGE) {
         if (main_state == NORMAL) {
             main_state = DEC_THRES_NORMAL;
         }
@@ -331,6 +327,7 @@ void fsm_alarm_button() {
         
         case NOT_PRESSED:
             if (alarm_button_val == 0) { // When button is pressed (low-active)
+                alarm_button_prev = NOT_PRESSED;
                 alarm_button = BOUNCE;
                 alarm_t0 = millis();
             }
@@ -339,23 +336,50 @@ void fsm_alarm_button() {
         case BOUNCE:
             alarm_t = millis();
             if (alarm_t - alarm_t0 >= DEBOUNCE_DELAY) { // debounce delay has passed
-                if (alarm_button_val == 0) {
-                    alarm_button = PRESSED;
+                if ((alarm_button_val == 0) && (alarm_button_prev == NOT_PRESSED)) {
+                    alarm_button = FALLING_EDGE;
+                }
+                else if ((alarm_button_val == 1) && (alarm_button_prev == PRESSED)) {
+                    alarm_button = RISING_EDGE;
                 }
                 else {
-                    alarm_button = NOT_PRESSED;
-                }                
+                    alarm_button = alarm_button_prev;
+                }
             }
             break;
         
-        case PRESSED:
-            if (alarm_button_val == 1) { // When button is not pressed
+        case FALLING_EDGE:
+            if (alarm_button_val == 0) { // button is held down
+                alarm_button = PRESSED;
+            }
+            else { // button is released
+                alarm_button_prev = PRESSED;
                 alarm_button = BOUNCE;
                 alarm_t0 = alarm_t;
                 alarm_t = millis();
             }
             break;
-    
+
+        case PRESSED:
+            if (alarm_button_val == 1) { // button is released
+                alarm_button_prev = PRESSED;
+                alarm_button = BOUNCE;
+                alarm_t0 = alarm_t;
+                alarm_t = millis();
+            }
+            break;
+        
+        case RISING_EDGE:
+            if (alarm_button_val == 1) { // button is held down
+                alarm_button = NOT_PRESSED;
+            }
+            else { // button is pressed again
+                alarm_button_prev = NOT_PRESSED;
+                alarm_button = BOUNCE;
+                alarm_t0 = alarm_t;
+                alarm_t = millis();
+            }
+            break;
     }
 }
 // REF: https://fastbitlab.com/fsm-lecture-30-exercise-003-button-software-debouncing-implementation/
@@ -368,7 +392,8 @@ void fsm_inc_button() {
     switch (inc_button) {
         
         case NOT_PRESSED:
-            if (inc_button_val == 0) { // When button is pressed
+            if (inc_button_val == 0) { // When button is pressed (low-active)
+                inc_button_prev = NOT_PRESSED;
                 inc_button = BOUNCE;
                 inc_t0 = millis();
             }
@@ -377,23 +402,50 @@ void fsm_inc_button() {
         case BOUNCE:
             inc_t = millis();
             if (inc_t - inc_t0 >= DEBOUNCE_DELAY) { // debounce delay has passed
-                if (inc_button_val == 0) {
-                    inc_button = PRESSED;
+                if ((inc_button_val == 0) && (inc_button_prev == NOT_PRESSED)) {
+                    inc_button = FALLING_EDGE;
+                }
+                else if ((inc_button_val == 1) && (inc_button_prev == PRESSED)) {
+                    inc_button = RISING_EDGE;
                 }
                 else {
-                    inc_button = NOT_PRESSED;
-                }                
+                    inc_button = inc_button_prev;
+                }
             }
             break;
         
-        case PRESSED:
-            if (inc_button_val == 1) { // When button is not pressed
+        case FALLING_EDGE:
+            if (inc_button_val == 0) { // button is held down
+                inc_button = PRESSED;
+            }
+            else { // button is released
+                inc_button_prev = PRESSED;
                 inc_button = BOUNCE;
-                inc_t0 = alarm_t;
+                inc_t0 = inc_t;
                 inc_t = millis();
             }
             break;
-    
+
+        case PRESSED:
+            if (inc_button_val == 1) { // button is released
+                inc_button_prev = PRESSED;
+                inc_button = BOUNCE;
+                inc_t0 = inc_t;
+                inc_t = millis();
+            }
+            break;
+        
+        case RISING_EDGE:
+            if (inc_button_val == 1) { // button is held down
+                inc_button = NOT_PRESSED;
+            }
+            else { // button is pressed again
+                inc_button_prev = NOT_PRESSED;
+                inc_button = BOUNCE;
+                inc_t0 = inc_t;
+                inc_t = millis();
+            }
+            break;
     }
 }
 
@@ -405,7 +457,8 @@ void fsm_dec_button() {
     switch (dec_button) {
         
         case NOT_PRESSED:
-            if (dec_button_val == 0) { // When button is pressed
+            if (dec_button_val == 0) { // When button is pressed (low-active)
+                dec_button_prev = NOT_PRESSED;
                 dec_button = BOUNCE;
                 dec_t0 = millis();
             }
@@ -414,23 +467,50 @@ void fsm_dec_button() {
         case BOUNCE:
             dec_t = millis();
             if (dec_t - dec_t0 >= DEBOUNCE_DELAY) { // debounce delay has passed
-                if (dec_button_val == 0) {
-                    dec_button = PRESSED;
+                if ((dec_button_val == 0) && (dec_button_prev == NOT_PRESSED)) {
+                    dec_button = FALLING_EDGE;
+                }
+                else if ((dec_button_val == 1) && (dec_button_prev == PRESSED)) {
+                    dec_button = RISING_EDGE;
                 }
                 else {
-                    dec_button = NOT_PRESSED;
-                }                
+                    dec_button = dec_button_prev;
+                }
             }
             break;
         
-        case PRESSED:
-            if (dec_button_val == 1) { // When button is not pressed
+        case FALLING_EDGE:
+            if (dec_button_val == 0) { // button is held down
+                dec_button = PRESSED;
+            }
+            else { // button is released
+                dec_button_prev = PRESSED;
                 dec_button = BOUNCE;
                 dec_t0 = dec_t;
                 dec_t = millis();
             }
             break;
-    
+
+        case PRESSED:
+            if (dec_button_val == 1) { // button is released
+                dec_button_prev = PRESSED;
+                dec_button = BOUNCE;
+                dec_t0 = dec_t;
+                dec_t = millis();
+            }
+            break;
+        
+        case RISING_EDGE:
+            if (dec_button_val == 1) { // button is held down
+                dec_button = NOT_PRESSED;
+            }
+            else { // button is pressed again
+                dec_button_prev = NOT_PRESSED;
+                dec_button = BOUNCE;
+                dec_t0 = dec_t;
+                dec_t = millis();
+            }
+            break;
     }
 }
 
