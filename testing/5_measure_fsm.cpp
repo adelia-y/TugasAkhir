@@ -12,7 +12,6 @@
 #define AERATION_PUMP 21
 #define WATER_PUMP 22
 #define WATER_VALVE 23
-
 #define WATER_SENSOR_UPPER 24
 #define WATER_SENSOR_LOWER 25
 #define AMMONIA_SENSOR 26
@@ -167,7 +166,7 @@ void setup() {
 
     pinMode(LCD_PIN, OUTPUT);
     pinMode(ALARM_PIN, OUTPUT);
-
+    
     pinMode(ALARM_BUTTON, INPUT_PULLUP);
     pinMode(INC_BUTTON, INPUT_PULLUP);
     pinMode(DEC_BUTTON, INPUT_PULLUP);
@@ -177,7 +176,6 @@ void setup() {
     pinMode(AERATION_PUMP, OUTPUT);
     pinMode(WATER_PUMP, OUTPUT);
     pinMode(WATER_VALVE, OUTPUT);
-
     pinMode(WATER_SENSOR_UPPER, INPUT);
     pinMode(WATER_SENSOR_LOWER, INPUT);
     pinMode(AMMONIA_SENSOR, INPUT);
