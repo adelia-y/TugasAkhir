@@ -4,24 +4,25 @@
 
 // ----- DEFINE VARIABLES
 // Interfaces
-#define LCD_PIN 5
-#define ALARM_PIN 6
+#define LCD_PIN_SCL 22 // I2C SCL PIN
+#define LCD_PIN_SDA 21 // I2C SDA PIN
+#define ALARM_PIN 23 // DIGITAL OUTPUT PIN
 
 // Chamber
-#define AIR_VALVE 20
-#define AERATION_PUMP 21
-#define WATER_PUMP 22
-#define WATER_VALVE 23
+#define AIR_VALVE 34 // DIGITAL OUTPUT PIN
+#define AERATION_PUMP 35
+#define WATER_PUMP 32
+#define WATER_VALVE 33
 
-#define WATER_SENSOR_UPPER 24
-#define WATER_SENSOR_LOWER 25
-#define AMMONIA_SENSOR 26
+#define WATER_SENSOR_UPPER 25 // ADC DAC0
+#define WATER_SENSOR_LOWER 26 // ADC DAC1
+#define AMMONIA_SENSOR 27 // ADC
 
 // Buttons
-#define ALARM_BUTTON 18
-#define INC_BUTTON 19
-#define DEC_BUTTON 21
-#define TRIG_BUTTON 5
+#define ALARM_BUTTON 16 
+#define INC_BUTTON 17
+#define DEC_BUTTON 18
+#define TRIG_BUTTON 19
 
 // Other variables
 #define DEBOUNCE_DELAY 50 // ms
@@ -165,7 +166,8 @@ void print_measure_state();
 void setup() {
     Serial.begin(115200);
 
-    pinMode(LCD_PIN, OUTPUT);
+    pinMode(LCD_PIN_SCL, OUTPUT);
+    pinMode(LCD_PIN_SDA, OUTPUT);
     pinMode(ALARM_PIN, OUTPUT);
 
     pinMode(ALARM_BUTTON, INPUT_PULLUP);
