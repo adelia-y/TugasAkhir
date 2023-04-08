@@ -1,25 +1,31 @@
 #include <Arduino.h>
 
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+
 
 // ----- DEFINE VARIABLES
 // Interfaces
-#define LCD_PIN 5
-#define ALARM_PIN 6
+#define ALARM_PIN 23 // DIGITAL OUTPUT PIN
+// #define LCD_PIN_SCL 22 // I2C SCL PIN
+// #define LCD_PIN_SDA 21 // I2C SDA PIN
+LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 // Chamber
-#define AIR_VALVE 20
-#define AERATION_PUMP 21
-#define WATER_PUMP 22
-#define WATER_VALVE 23
-#define WATER_SENSOR_UPPER 24
-#define WATER_SENSOR_LOWER 25
-#define AMMONIA_SENSOR 26
+#define AIR_VALVE 34 // DIGITAL OUTPUT PIN
+#define AERATION_PUMP 35
+#define WATER_PUMP 32
+#define WATER_VALVE 33
+
+#define WATER_SENSOR_UPPER 25 // ADC DAC0
+#define WATER_SENSOR_LOWER 26 // ADC DAC1
+#define AMMONIA_SENSOR 27 // ADC
 
 // Buttons
-#define ALARM_BUTTON 18
-#define INC_BUTTON 19
-#define DEC_BUTTON 21
-#define TRIG_BUTTON 5
+#define ALARM_BUTTON 16 
+#define INC_BUTTON 17
+#define DEC_BUTTON 18
+#define TRIG_BUTTON 19
 
 // Other variables
 #define DEBOUNCE_DELAY 50 // ms
@@ -140,16 +146,29 @@ void app_sound_off();
 void alarm_on();
 void app_sound_on();
 
-// Test function
-void print_main_state(states main_state);
+// Helper function
+String get_main_state();
+void lcd_clear_line(int line);
 
 // ----- SETUP
 void setup() {
     Serial.begin(115200);
 
+    // LCD 20x4 Display Initialization
+    lcd.init();
+    lcd.backlight();
+    lcd.setCursor(5, 1);
+    lcd.print("FISHPOND");
+    lcd.setCursor(1, 2);
+    lcd.print("MONITORING SYSTEM");
+    delay(2000);
+
+    pinMode(ALARM_PIN, OUTPUT);
+
     pinMode(ALARM_BUTTON, INPUT_PULLUP);
     pinMode(INC_BUTTON, INPUT_PULLUP);
     pinMode(DEC_BUTTON, INPUT_PULLUP);
+    pinMode(TRIG_BUTTON, INPUT_PULLUP);
 }
 
 
@@ -187,30 +206,37 @@ void loop() {
     // delay(200);
 }
 
-// ------ TESTING FUNCTIONS
-void print_main_state(states state) {
-    switch (state) {
+// ------ HELPER FUNCTIONS
+String get_main_state() {
+    switch (main_state) {
         case NORMAL:
-            Serial.println("NORMAL");
+            return "NORMAL";
             break;
         case ALARM:
-            Serial.println("ALARM");
+            return "ALARM";
             break;
         case PASSIVE:
-            Serial.println("PASSIVE");
+            return "PASSIVE";
             break;
         case INC_THRES_NORMAL:
-            Serial.println("INC_THRES_NORMAL");
+            return "INC_THRES_NORMAL";
             break;
         case DEC_THRES_NORMAL:
-            Serial.println("DEC_THRES_NORMAL");
+            return "DEC_THRES_NORMAL";
             break;
         case INC_THRES_PASSIVE:
-            Serial.println("INC_THRES_PASSIVE");
+            return "INC_THRES_PASSIVE";
             break;
         case DEC_THRES_PASSIVE:
-            Serial.println("DEC_THRES_PASSIVE");
+            return "DEC_THRES_PASSIVE";
             break;
+    }
+}
+
+void lcd_clear_line(int line) {
+    lcd.setCursor(0, line);
+    for(int n = 0; n < 20; n++) {
+        lcd.print(" ");
     }
 }
 
@@ -238,7 +264,7 @@ void determine_state() {
             main_state = INC_THRES_PASSIVE;
         }
         else {
-            message = "NORMAL/PASSIVE MODE ONLY";
+            message = "TURN OFF ALARM FIRST";
         }
     }
 
@@ -252,7 +278,7 @@ void determine_state() {
             main_state = DEC_THRES_PASSIVE;
         }
         else {
-            message = "NORMAL/PASSIVE MODE ONLY";
+            message = "TURN OFF ALARM FIRST";
         }
     }
 
@@ -682,18 +708,29 @@ void fsm_alarm() {
 // ----- DISPLAY OUTPUT CONTROL
 void lcd_display_status() {
     Serial.print("[LCD Display] Status: ");
-    print_main_state(main_state);
+    Serial.println(get_main_state());
+
+    lcd_clear_line(0);
+    lcd.setCursor(0, 0);
+    lcd.print("Status: ");
+    lcd.print(get_main_state());
 }
 
 void app_display_status() {
     Serial.print("[APP Display] Status: ");
-    print_main_state(main_state);
+    Serial.println(get_main_state());
 }
 
 void lcd_display_measurement() {
     Serial.print("[LCD Display] Ammonia: ");
     Serial.print(current_measurement);
     Serial.println(" ppm");
+
+    lcd_clear_line(1);
+    lcd.setCursor(0, 1);
+    lcd.print("Ammonia: ");
+    lcd.print(current_measurement);
+    lcd.print(" ppm");
 }
 
 void app_display_measurement() {
@@ -706,6 +743,12 @@ void lcd_display_threshold() {
     Serial.print("[LCD Display] Threshold: ");
     Serial.print(threshold);
     Serial.println(" ppm");
+
+    lcd_clear_line(2);
+    lcd.setCursor(0, 2);
+    lcd.print("Threshold: ");
+    lcd.print(threshold);
+    lcd.print(" ppm");
 }
 
 void app_display_threshold() {
@@ -717,9 +760,15 @@ void app_display_threshold() {
 void display_message() {
     if (message != "") {
         Serial.println(message);
+        
+        lcd_clear_line(3);
+        lcd.setCursor(0, 3);
+        lcd.print(message);
     }
     else {
         Serial.println();
+
+        lcd_clear_line(3);
     }
 }
 
