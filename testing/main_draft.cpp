@@ -13,14 +13,14 @@
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 // Chamber
-#define AIR_VALVE 34 // DIGITAL OUTPUT PIN WHITE
-#define AERATION_PUMP 35 // RED
+#define AIR_VALVE 5 // DIGITAL OUTPUT PIN WHITE
+#define AERATION_PUMP 19 // RED
 #define WATER_PUMP 32 // YELLOW
 #define WATER_VALVE 33 // GREEN
 
-#define WATER_SENSOR_UPPER 25 // ADC DAC0
-#define WATER_SENSOR_LOWER 26 // ADC DAC1
-#define AMMONIA_SENSOR 27 // ADC
+#define WATER_SENSOR_UPPER 36 // ADC DAC0
+#define WATER_SENSOR_LOWER 39 // ADC DAC1
+#define AMMONIA_SENSOR 34 // ADC
 
 // Buttons
 #define ALARM_BUTTON 16 
@@ -69,7 +69,7 @@ unsigned long trig_t0 = 0;
 
 // Display states
 enum display_states {DISPLAY_IDLE, DISPLAY_UPDATE};
-display_states display_state = DISPLAY_IDLE;
+display_states display_state = DISPLAY_IDLE; 
 
 // Display variables
 String message = "";
