@@ -26,7 +26,6 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 #define ALARM_BUTTON 16 
 #define INC_BUTTON 17
 #define DEC_BUTTON 18
-#define TRIG_BUTTON 19
 
 // Other variables
 #define DEBOUNCE_DELAY 50 // ms
@@ -185,12 +184,11 @@ void setup() {
     pinMode(ALARM_BUTTON, INPUT_PULLUP);
     pinMode(INC_BUTTON, INPUT_PULLUP);
     pinMode(DEC_BUTTON, INPUT_PULLUP);
-    pinMode(TRIG_BUTTON, INPUT_PULLUP);
 
-    // pinMode(AIR_VALVE, OUTPUT);
-    // pinMode(AERATION_PUMP, OUTPUT);
-    // pinMode(WATER_PUMP, OUTPUT);
-    // pinMode(WATER_VALVE, OUTPUT);
+    pinMode(AIR_VALVE, OUTPUT);
+    pinMode(AERATION_PUMP, OUTPUT);
+    pinMode(WATER_PUMP, OUTPUT);
+    pinMode(WATER_VALVE, OUTPUT);
 
     pinMode(WATER_SENSOR_UPPER, INPUT);
     pinMode(WATER_SENSOR_LOWER, INPUT);
@@ -297,6 +295,7 @@ void lcd_clear_line(int line) {
         lcd.print(" ");
     }
 }
+
 
 // ------ MAIN FSM
 void determine_state() {
@@ -642,69 +641,69 @@ void fsm_dec_button() {
     }
 }
 
-void fsm_trig_button() {
+// void fsm_trig_button() {
 
-    trig_button_val = digitalRead(TRIG_BUTTON);
+//     trig_button_val = digitalRead(TRIG_BUTTON);
 
-    switch (trig_button) {
+//     switch (trig_button) {
         
-        case NOT_PRESSED:
-            if (trig_button_val == 0) { // When button is pressed (low-active)
-                trig_button_prev = NOT_PRESSED;
-                trig_button = BOUNCE;
-                trig_t0 = millis();
-            }
-            break;
+//         case NOT_PRESSED:
+//             if (trig_button_val == 0) { // When button is pressed (low-active)
+//                 trig_button_prev = NOT_PRESSED;
+//                 trig_button = BOUNCE;
+//                 trig_t0 = millis();
+//             }
+//             break;
         
-        case BOUNCE:
-            trig_t = millis();
-            if (trig_t - trig_t0 >= DEBOUNCE_DELAY) { // debounce delay has passed
-                if ((trig_button_val == 0) && (trig_button_prev == NOT_PRESSED)) {
-                    trig_button = FALLING_EDGE;
-                }
-                else if ((trig_button_val == 1) && (trig_button_prev == PRESSED)) {
-                    trig_button = RISING_EDGE;
-                }
-                else {
-                    trig_button = trig_button_prev;
-                }
-            }
-            break;
+//         case BOUNCE:
+//             trig_t = millis();
+//             if (trig_t - trig_t0 >= DEBOUNCE_DELAY) { // debounce delay has passed
+//                 if ((trig_button_val == 0) && (trig_button_prev == NOT_PRESSED)) {
+//                     trig_button = FALLING_EDGE;
+//                 }
+//                 else if ((trig_button_val == 1) && (trig_button_prev == PRESSED)) {
+//                     trig_button = RISING_EDGE;
+//                 }
+//                 else {
+//                     trig_button = trig_button_prev;
+//                 }
+//             }
+//             break;
         
-        case FALLING_EDGE:
-            if (trig_button_val == 0) { // button is held down
-                trig_button = PRESSED;
-            }
-            else { // button is released
-                trig_button_prev = PRESSED;
-                trig_button = BOUNCE;
-                trig_t0 = trig_t;
-                trig_t = millis();
-            }
-            break;
+//         case FALLING_EDGE:
+//             if (trig_button_val == 0) { // button is held down
+//                 trig_button = PRESSED;
+//             }
+//             else { // button is released
+//                 trig_button_prev = PRESSED;
+//                 trig_button = BOUNCE;
+//                 trig_t0 = trig_t;
+//                 trig_t = millis();
+//             }
+//             break;
 
-        case PRESSED:
-            if (trig_button_val == 1) { // button is released
-                trig_button_prev = PRESSED;
-                trig_button = BOUNCE;
-                trig_t0 = trig_t;
-                trig_t = millis();
-            }
-            break;
+//         case PRESSED:
+//             if (trig_button_val == 1) { // button is released
+//                 trig_button_prev = PRESSED;
+//                 trig_button = BOUNCE;
+//                 trig_t0 = trig_t;
+//                 trig_t = millis();
+//             }
+//             break;
         
-        case RISING_EDGE:
-            if (trig_button_val == 1) { // button is held down
-                trig_button = NOT_PRESSED;
-            }
-            else { // button is pressed again
-                trig_button_prev = NOT_PRESSED;
-                trig_button = BOUNCE;
-                trig_t0 = trig_t;
-                trig_t = millis();
-            }
-            break;
-    }
-}
+//         case RISING_EDGE:
+//             if (trig_button_val == 1) { // button is held down
+//                 trig_button = NOT_PRESSED;
+//             }
+//             else { // button is pressed again
+//                 trig_button_prev = NOT_PRESSED;
+//                 trig_button = BOUNCE;
+//                 trig_t0 = trig_t;
+//                 trig_t = millis();
+//             }
+//             break;
+//     }
+// }
 
 
 
