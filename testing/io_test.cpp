@@ -25,9 +25,14 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 #define ALARM_BUTTON 16 
 #define INC_BUTTON 17
 #define DEC_BUTTON 18
-#define TRIG_BUTTON 19
 
 #define delay_time 500 // ms
+
+float ammonia_sensor = 0;
+float water_sensor_upper = 0;
+float water_sensor_lower = 0;
+
+float mapf(float x, float in_min, float in_max, float out_min, float out_max);
 
 // ----- SETUP
 void setup() {
@@ -47,7 +52,6 @@ void setup() {
     pinMode(ALARM_BUTTON, INPUT_PULLUP);
     pinMode(INC_BUTTON, INPUT_PULLUP);
     pinMode(DEC_BUTTON, INPUT_PULLUP);
-    pinMode(TRIG_BUTTON, INPUT_PULLUP);
 
     pinMode(AIR_VALVE, OUTPUT);
     pinMode(AERATION_PUMP, OUTPUT);
@@ -73,21 +77,24 @@ void loop() {
     if (digitalRead(DEC_BUTTON) == 0) {
         Serial.println("DEC BUTTON PRESSED");
     }
-    if (digitalRead(TRIG_BUTTON) == 0) {
-        Serial.println("TRIG BUTTON PRESSED");
-    }
 
     // Sensors check
     Serial.println("=== SENSORS CHECK ===");
 
     Serial.print("AMMONIA SENSOR: ");
-    Serial.println(analogRead(AMMONIA_SENSOR));
+    ammonia_sensor = analogRead(AMMONIA_SENSOR);
+    ammonia_sensor = mapf(ammonia_sensor, 0, 4095, 0, 5); // map from 0-5 ppm
+    Serial.println(ammonia_sensor);
     
     Serial.print("WATER SENSOR UPPER: ");
-    Serial.println(analogRead(WATER_SENSOR_UPPER));
+    water_sensor_upper = analogRead(WATER_SENSOR_UPPER);
+    water_sensor_upper = mapf(water_sensor_upper, 0, 4095, 10, 15); // map from 10-15 cm
+    Serial.println(water_sensor_upper);
 
     Serial.print("WATER SENSOR LOWER: ");
-    Serial.println(analogRead(WATER_SENSOR_LOWER));
+    water_sensor_lower = analogRead(WATER_SENSOR_LOWER);
+    water_sensor_lower = mapf(water_sensor_lower, 0, 4095, 0, 5); // map from 0-5 cm
+    Serial.println(water_sensor_lower);
 
     // Chamber control check
     Serial.println("=== CHAMBER CONTROL CHECK ===");
@@ -128,4 +135,9 @@ void loop() {
 
     Serial.println();
     Serial.println();
+}
+
+float mapf(float x, float in_min, float in_max, float out_min, float out_max)
+{
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
