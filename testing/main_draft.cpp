@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <random>
 
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
@@ -91,10 +90,13 @@ unsigned long aeration_time = 5000; // ms
 unsigned long measure_time = 5000; // ms
 unsigned long init_chamber_time = 0; // ms
 unsigned long chamber_time = 0; // ms, contain time elapsed to control aeration and measure duration
+
 float water_height = 0; // cm
 float water_limit_upper = 10; // cm
 float water_limit_lower = 1; // cm
-float water_sensor_position = 8; // cm, this is the height of the upper sensor placed in chamber
+float upper_water_sensor_position = 8; // cm, this is the height of the upper sensor placed in chamber
+float lower_water_sensor_position = 0; // cm, this is the height of the lower sensor placed in chamber
+float water_sensor_length = 5; // cm, this is the max length of water sensor detection
 
 // Measure states
 enum measure_states {AVAILABLE, DETECT, CALIBRATE};
@@ -103,6 +105,9 @@ measure_states measure_state = AVAILABLE;
 // Ammonia measurement variables
 float threshold = 0.5; // measured in mg/L or ppm
 bool threshold_change = false; // for display necessities
+
+float min_ammonia_sensor = 0; // ppm 
+float max_ammonia_sensor = 5; // ppm
 
 float raw_measurement = 0;
 float sum_measurement = 0;
@@ -155,6 +160,9 @@ void chamber_aeration();
 void chamber_measure();
 void chamber_drain();
 
+void read_upper_water_height();
+void read_lower_water_height();
+
 // Measure FSM functions
 void fsm_measure();
 void read_sensor();
@@ -165,6 +173,8 @@ String get_main_state();
 String get_chamber_state();
 String get_measure_state();
 void lcd_clear_line(int line);
+float mapf(float x, float in_min, float in_max, float out_min, float out_max);
+
 
 // ----- SETUP
 void setup() {
@@ -199,25 +209,16 @@ void setup() {
 // ----- LOOP
 void loop() {
 
-    // Store previous states for printing test results
+    // Store previous main state
     test_prev_main_state = main_state;
 
     // Check and cycle button fsm
     fsm_alarm_button();
     fsm_inc_button();
     fsm_dec_button();
-    fsm_trig_button();
 
     determine_state();
     FSM();
-    
-    // Enable manual alarm triggering for testing 
-    // if (trig_button == FALLING_EDGE) {
-    //     if (main_state != PASSIVE) {
-    //         prev_measurement = current_measurement;
-    //         current_measurement = threshold + 0.10;
-    //     }
-    // }
 
     // Change other sub-fsm according to main fsm states (display and alarm)
     fsm_display();
@@ -225,6 +226,9 @@ void loop() {
     
     // Cycle chamber & measure fsm, independent of main fsm states
     fsm_chamber();
+    Serial.print("Chamber state: ");
+    Serial.println(get_chamber_state());
+    
     fsm_measure();
 }
 
@@ -294,6 +298,10 @@ void lcd_clear_line(int line) {
     for(int n = 0; n < 20; n++) {
         lcd.print(" ");
     }
+}
+
+float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 
@@ -641,71 +649,6 @@ void fsm_dec_button() {
     }
 }
 
-// void fsm_trig_button() {
-
-//     trig_button_val = digitalRead(TRIG_BUTTON);
-
-//     switch (trig_button) {
-        
-//         case NOT_PRESSED:
-//             if (trig_button_val == 0) { // When button is pressed (low-active)
-//                 trig_button_prev = NOT_PRESSED;
-//                 trig_button = BOUNCE;
-//                 trig_t0 = millis();
-//             }
-//             break;
-        
-//         case BOUNCE:
-//             trig_t = millis();
-//             if (trig_t - trig_t0 >= DEBOUNCE_DELAY) { // debounce delay has passed
-//                 if ((trig_button_val == 0) && (trig_button_prev == NOT_PRESSED)) {
-//                     trig_button = FALLING_EDGE;
-//                 }
-//                 else if ((trig_button_val == 1) && (trig_button_prev == PRESSED)) {
-//                     trig_button = RISING_EDGE;
-//                 }
-//                 else {
-//                     trig_button = trig_button_prev;
-//                 }
-//             }
-//             break;
-        
-//         case FALLING_EDGE:
-//             if (trig_button_val == 0) { // button is held down
-//                 trig_button = PRESSED;
-//             }
-//             else { // button is released
-//                 trig_button_prev = PRESSED;
-//                 trig_button = BOUNCE;
-//                 trig_t0 = trig_t;
-//                 trig_t = millis();
-//             }
-//             break;
-
-//         case PRESSED:
-//             if (trig_button_val == 1) { // button is released
-//                 trig_button_prev = PRESSED;
-//                 trig_button = BOUNCE;
-//                 trig_t0 = trig_t;
-//                 trig_t = millis();
-//             }
-//             break;
-        
-//         case RISING_EDGE:
-//             if (trig_button_val == 1) { // button is held down
-//                 trig_button = NOT_PRESSED;
-//             }
-//             else { // button is pressed again
-//                 trig_button_prev = NOT_PRESSED;
-//                 trig_button = BOUNCE;
-//                 trig_t0 = trig_t;
-//                 trig_t = millis();
-//             }
-//             break;
-//     }
-// }
-
-
 
 // ----- DISPLAY AND ALARM FUNCTIONS
 void fsm_display() {
@@ -778,6 +721,7 @@ void app_display_status() {
     Serial.println(get_main_state());
 }
 
+
 void lcd_display_measurement() {
     Serial.print("[LCD Display] Ammonia: ");
     Serial.print(current_measurement);
@@ -795,6 +739,7 @@ void app_display_measurement() {
     Serial.print(current_measurement);
     Serial.println(" ppm");
 }
+
 
 void lcd_display_threshold() {
     Serial.print("[LCD Display] Threshold: ");
@@ -814,6 +759,7 @@ void app_display_threshold() {
     Serial.println(" ppm");
 }
 
+
 void display_message() {
     if (message != "") {
         Serial.println(message);
@@ -829,10 +775,11 @@ void display_message() {
     }
 }
 
+
 // ----- DISPLAY ALARM CONTROL
 void alarm_off() {
     Serial.println("[ALARM Sound] OFF.");
-    // digitalWrite(ALARM_PIN, LOW);
+    digitalWrite(ALARM_PIN, LOW);
 }
 
 void app_sound_off() {
@@ -841,7 +788,7 @@ void app_sound_off() {
 
 void alarm_on() {
     Serial.println("[ALARM Sound] ON.");
-    // digitalWrite(ALARM_PIN, HIGH);
+    digitalWrite(ALARM_PIN, HIGH);
 }
 
 void app_sound_on() {
@@ -855,23 +802,22 @@ void fsm_chamber() {
         case IDLE:
             // Do nothing
             test_prev_chamber_state = chamber_state;
-            chamber_state = FILL;
+            chamber_state = FILL; // Start chamber from filling
             break;
         
         case FILL:
-            // water_height = digitalRead(WATER_SENSOR_UPPER) + water_sensor_position;
-            water_height += 0.001;
+            read_upper_water_height();
 
             if (water_height >= water_limit_upper) {
-                // Serial.print("Water height: ");
-                // Serial.println(water_height);
+                Serial.print("Water height: ");
+                Serial.println(water_height);
                 
                 test_prev_chamber_state = chamber_state;
                 chamber_state = AERATION;
                 init_chamber_time = millis();
             }
 
-            // chamber_fill();
+            chamber_fill();
             break;
         
         case AERATION:
@@ -886,7 +832,7 @@ void fsm_chamber() {
                 init_chamber_time = millis();
             }
 
-            // chamber_aeration();
+            chamber_aeration();
             break;
         
         case MEASUREMENT:
@@ -900,23 +846,22 @@ void fsm_chamber() {
                 chamber_state = DRAIN;
             }
             
-            // chamber_measure();
+            chamber_measure();
             measure_state = DETECT;
             break;
         
         case DRAIN:
-            // water_height = digitalRead(WATER_SENSOR_LOWER);
-            water_height -= 0.001;
+            read_lower_water_height();
 
             if (water_height <= water_limit_lower) {
-                // Serial.print("Water height: ");
-                // Serial.println(water_height);
+                Serial.print("Water height: ");
+                Serial.println(water_height);
 
                 test_prev_chamber_state = chamber_state;
                 chamber_state = FILL;
             }
             
-            // chamber_drain();
+            chamber_drain();
             measure_state = CALIBRATE;
             break;
     }
@@ -960,7 +905,6 @@ void fsm_measure() {
     switch (measure_state) {
         case AVAILABLE:
             current_measurement = calibrated_measurement;
-            // Serial.println(current_measurement);
             sum_measurement = 0;
             measure_count = 0;
             break;
@@ -978,12 +922,30 @@ void fsm_measure() {
 
 void read_sensor() {
     // Accumulate reading for measurement averaging
-    // sum_measurement += digitalRead(AMMONIA_SENSOR);
-    sum_measurement += (rand()%2);
+    raw_measurement = analogRead(AMMONIA_SENSOR);
+    raw_measurement = mapf(
+        raw_measurement, 0, 4095,
+        min_ammonia_sensor, max_ammonia_sensor);
+    
+    sum_measurement += raw_measurement;
     measure_count += 1;
 }
 
 void calibrate_reading() {
     calibrated_measurement = sum_measurement / measure_count;
     // TO DO: Calibration using regression
+}
+
+void read_upper_water_height() {
+    water_height = analogRead(WATER_SENSOR_UPPER);
+    water_height = mapf(
+        water_height, 0, 4095,
+        upper_water_sensor_position, (upper_water_sensor_position + water_sensor_length));
+}
+
+void read_lower_water_height() {
+    water_height = analogRead(WATER_SENSOR_LOWER);
+    water_height = mapf(
+        water_height, 0, 4095,
+        lower_water_sensor_position, (lower_water_sensor_position + water_sensor_length));
 }
