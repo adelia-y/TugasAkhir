@@ -3,6 +3,12 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
 
 // ----- DEFINE VARIABLES
 // Interfaces
@@ -75,6 +81,22 @@ String message = "";
 // unsigned long display_time = 0; // ms
 // unsigned long display_delay = 2000; // ms
 
+// Bluetooth variables
+BluetoothSerial SerialBT;
+unsigned long bt_init_time = 0; // ms
+unsigned long bt_send_interval = 10000; // ms
+
+int bt_receive; // data to be received
+String bt_send; // data to be sent
+/*
+Format: current_measurement (4 char) / threshold (3 char) / status (1 char)
+Char code for status
+1 = NORMAL
+2 = ALARM
+3 = PASSIVE
+bt_send example: "1.12 0.05 1"
+*/
+
 // Alarm states
 enum alarm_states {ALARM_ON, ALARM_OFF};
 alarm_states alarm_state = ALARM_OFF;
@@ -139,12 +161,15 @@ bool is_above_threshold();
 // Display FSM functions
 void fsm_display();
 void lcd_display_status();
-void app_display_status();
 void lcd_display_measurement();
-void app_display_measurement();
 void lcd_display_threshold();
-void app_display_threshold();
 void display_message();
+
+// Bluetooth functions
+void app_send_data();
+void prepare_data_send();
+void bt_send_string(String string);
+void bt_button_handler();
 
 // Alarm FSM functions
 void fsm_alarm();
@@ -189,6 +214,12 @@ void setup() {
     lcd.print("MONITORING SYSTEM");
     delay(2000);
 
+    // Serial Bluetooth Initialization
+    SerialBT.begin("ESP32_TA222302003"); // Bluetooth device name
+    Serial.println("Success bluetooth initialization. You can pair device now.");
+    bt_init_time = millis();
+
+    // Pins Initialization
     pinMode(ALARM_PIN, OUTPUT);
 
     pinMode(ALARM_BUTTON, INPUT_PULLUP);
@@ -217,6 +248,13 @@ void loop() {
     fsm_inc_button();
     fsm_dec_button();
 
+    // Check input from bluetooth
+    if (SerialBT.available()) {
+        bt_button_handler();
+        Serial.print("RECEIVING DATA: ");
+        Serial.println(bt_receive);
+    }
+
     determine_state();
     FSM();
 
@@ -226,8 +264,8 @@ void loop() {
     
     // Cycle chamber & measure fsm, independent of main fsm states
     fsm_chamber();
-    Serial.print("Chamber state: ");
-    Serial.println(get_chamber_state());
+    // Serial.print("Chamber state: ");
+    // Serial.println(get_chamber_state());
     
     fsm_measure();
 }
@@ -667,13 +705,11 @@ void fsm_display() {
         
         case DISPLAY_UPDATE:
             lcd_display_status();
-            app_display_status();
-        
             lcd_display_measurement();
-            app_display_measurement();
-
             lcd_display_threshold();
-            app_display_threshold();
+
+            app_send_data();
+            
             threshold_change = false;
 
             display_message();
@@ -716,12 +752,6 @@ void lcd_display_status() {
     lcd.print(get_main_state());
 }
 
-void app_display_status() {
-    Serial.print("[APP Display] Status: ");
-    Serial.println(get_main_state());
-}
-
-
 void lcd_display_measurement() {
     Serial.print("[LCD Display] Ammonia: ");
     Serial.print(current_measurement);
@@ -734,13 +764,6 @@ void lcd_display_measurement() {
     lcd.print(" ppm");
 }
 
-void app_display_measurement() {
-    Serial.print("[APP Display] Ammonia: ");
-    Serial.print(current_measurement);
-    Serial.println(" ppm");
-}
-
-
 void lcd_display_threshold() {
     Serial.print("[LCD Display] Threshold: ");
     Serial.print(threshold);
@@ -752,13 +775,6 @@ void lcd_display_threshold() {
     lcd.print(threshold);
     lcd.print(" ppm");
 }
-
-void app_display_threshold() {
-    Serial.print("[LCD Display] Threshold: ");
-    Serial.print(threshold);
-    Serial.println(" ppm");
-}
-
 
 void display_message() {
     if (message != "") {
@@ -775,6 +791,80 @@ void display_message() {
     }
 }
 
+void app_display_status() {
+    Serial.print("[APP Display] Status: ");
+    Serial.println(get_main_state());
+}
+
+void app_display_measurement() {
+    Serial.print("[APP Display] Ammonia: ");
+    Serial.print(current_measurement);
+    Serial.println(" ppm");
+}
+
+void app_display_threshold() {
+    Serial.print("[LCD Display] Threshold: ");
+    Serial.print(threshold);
+    Serial.println(" ppm");
+}
+
+void app_send_data() {
+    // SEND TO ANDROID
+    if (millis() - bt_init_time > bt_send_interval) { // Send data every few seconds
+        prepare_data_send();
+        
+        Serial.print("SENDING DATA: ");
+        Serial.println(bt_send);
+        
+        bt_send_string(bt_send);
+        
+        bt_init_time = millis();
+    }
+}
+
+void prepare_data_send() {
+    // Prepare status data
+    String temp_state;
+    if (main_state == NORMAL) {
+        temp_state = "1";
+    }
+    else if (main_state == ALARM) {
+        temp_state = "2";
+    }
+    else if (main_state == PASSIVE) {
+        temp_state = "3";
+    }
+    
+    bt_send = String(current_measurement, 2) + " " + String(threshold, 2) + " " + temp_state;
+}
+
+void bt_send_string(String string) {
+    int i = 0;
+    int count_char = string.length();
+    while (i <= count_char) {
+        char one_char = string[i];
+        SerialBT.write(one_char);
+        i++;
+    }
+}
+
+void bt_button_handler() {
+    bt_receive = SerialBT.read();
+
+    switch (bt_receive) {
+        case 1:
+            alarm_button = FALLING_EDGE;
+            break;
+        case 2:
+            inc_button = FALLING_EDGE;
+            break;
+        case 3:
+            dec_button = FALLING_EDGE;
+            break;
+        default:
+            break;
+    }
+}
 
 // ----- DISPLAY ALARM CONTROL
 void alarm_off() {
