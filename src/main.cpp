@@ -315,9 +315,6 @@ String get_alarm_state(alarm_states state) {
 
 String get_chamber_state(chamber_states state) {
     switch (state) {
-        case IDLE:
-            return "IDLE";
-            break;
         case FILL:
             return "FILL";
             break;
