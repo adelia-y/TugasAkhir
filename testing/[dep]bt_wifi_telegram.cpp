@@ -6,6 +6,10 @@
 
 #include <WiFi.h>
 
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include <ArduinoJson.h>
+
 // BLUETOOTH
 BluetoothSerial SerialBT;
 
@@ -51,6 +55,21 @@ int disconnect_wifi_button = 0;
 void extract_wifi_credentials();
 void print_wifi_status();
 
+
+// TELEGRAM
+#define BOTtoken "6029608117:AAHkMBMgChMXfPc9Vo5SsX5w0gGQ8YVnCDo"
+#define CHAT_ID "1999563723"
+
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOTtoken, client);
+
+// Checks for new messages every 1 second.
+int botRequestDelay = 1000;
+unsigned long lastTimeBotRan;
+
+void handleNewMessages(int numNewMessages);
+
+
 void setup() {
     Serial.begin(115200);
     
@@ -92,6 +111,9 @@ void loop() {
         else { // connect to wifi
             extract_wifi_credentials();
             WiFi.begin(ssid.c_str(), password.c_str());
+            #ifdef ESP32
+                client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
+            #endif
         }
                 
         if (alarm_button == 1) {
@@ -123,6 +145,20 @@ void loop() {
         print_wifi_status();
         if (wifi_status == WL_CONNECTED) {
             Serial.println(WiFi.localIP());
+        }
+    }
+
+    // Send/receive telegram message 
+    if (wifi_status == WL_CONNECTED) {
+        if (millis() > lastTimeBotRan + botRequestDelay)  {
+            int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+
+            while(numNewMessages) {
+                Serial.println("got response");
+                handleNewMessages(numNewMessages);
+                numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+            }
+            lastTimeBotRan = millis();
         }
     }
 }
@@ -179,9 +215,10 @@ void bt_send_string(String string) {
 
 String bt_receive_string() {
     String received_string; 
-    while (SerialBT.available()) {
+    char one_char = ' ';
+    while (one_char != '/' ) {
         byte one_byte_char = SerialBT.read();
-        char one_char = (char) one_byte_char;
+        one_char = (char) one_byte_char;
         received_string += one_char;
     }
     if (received_string.length() > 0) {
@@ -250,7 +287,7 @@ void extract_wifi_credentials() {
         }
         ssid += bt_receive[i];
     }
-    for (i = i+1; i < bt_receive.length(); i++) {
+    for (i = i+1; i < (bt_receive.length() - 1); i++) {
         password += bt_receive[i];
     }
 }
@@ -276,4 +313,50 @@ void print_wifi_status() {
         Serial.println("WiFi not connected.");
         break;
     }
+}
+
+void handleNewMessages(int numNewMessages) {
+  Serial.println("handleNewMessages");
+  Serial.println(String(numNewMessages));
+
+  for (int i=0; i<numNewMessages; i++) {
+    // Chat id of the requester
+    String chat_id = String(bot.messages[i].chat_id);
+    if (chat_id != CHAT_ID){
+      bot.sendMessage(chat_id, "Unauthorized user", "");
+      continue;
+    }
+    
+    // Print the received message
+    String text = bot.messages[i].text;
+    Serial.println(text);
+
+    String from_name = bot.messages[i].from_name;
+
+    if (text == "/start") {
+      String welcome = "Welcome, " + from_name + ".\n";
+      welcome += "This is Ammonia Monitoring telegram bot.\n\n";
+      welcome += "/test - Test device response.\n";
+      bot.sendMessage(chat_id, welcome, "");
+    }
+
+    if (text == "/test") {
+      bot.sendMessage(chat_id, "Testing success.", "");
+    }
+    
+    // if (text == "/led_off") {
+    //   bot.sendMessage(chat_id, "LED state set to OFF", "");
+    //   ledState = LOW;
+    //   digitalWrite(ledPin, ledState);
+    // }
+    
+    // if (text == "/state") {
+    //   if (digitalRead(ledPin)){
+    //     bot.sendMessage(chat_id, "LED is ON", "");
+    //   }
+    //   else{
+    //     bot.sendMessage(chat_id, "LED is OFF", "");
+    //   }
+    // }
+  }
 }
