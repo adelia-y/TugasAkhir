@@ -76,7 +76,7 @@ alarm_states alarm_state = ALARM_OFF;
 alarm_states alarm_state_prev = ALARM_OFF;
 
 // ------ CHAMBER FSM
-enum chamber_states {IDLE, FILL, AERATION, MEASUREMENT, DRAIN};
+enum chamber_states {FILL, AERATION, MEASUREMENT, DRAIN};
 chamber_states chamber_state = FILL;
 chamber_states chamber_state_prev = FILL;
 
@@ -926,12 +926,7 @@ void app_sound_on() {
 // ------ CHAMBER FSM -------------------------------------------------------------------
 void fsm_chamber() {
     switch (chamber_state) {
-        // case IDLE:
-        //     // Do nothing
-        //     chamber_state_prev = chamber_state;
-        //     chamber_state = FILL; // Start chamber from filling
-        //     break;
-        
+
         case FILL:
             chamber_state_prev = chamber_state;
             read_upper_water_height();
