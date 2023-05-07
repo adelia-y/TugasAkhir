@@ -5,13 +5,19 @@
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
 
-
+// WIFI
+enum wifi_modes {STA, AP};
+wifi_modes wifi_mode;
+bool setup_sta = false;
+bool setup_ap = false;
 // ----------------- WIFI ACCESS POINT MODE
 const char *ap_ssid = "ESP32TA003";
 const char *ap_pass = "testpassword";
 
 AsyncWebServer server(80);
-IPAddress IP;
+IPAddress IP = IPAddress (22, 23, 1, 3);
+IPAddress gateway = IPAddress (22, 23, 1, 3);
+IPAddress NMask = IPAddress (255, 255, 255, 0);
 bool server_on = false;
 
 const char* PARAM_INPUT_SSID = "inputssid";
@@ -40,6 +46,8 @@ String sta_ssid;
 String sta_pass;
 wl_status_t wifi_status;
 WiFiClientSecure sta_client;
+unsigned long connection_init = 0; // ms
+unsigned long connection_timeout = 15000; // ms
 
 // ----------------- TELEGRAM
 #define BOTtoken "6029608117:AAHkMBMgChMXfPc9Vo5SsX5w0gGQ8YVnCDo"
@@ -70,77 +78,86 @@ void setup(){
     wifi_status = WiFi.status();
 }
 
-    // WL_IDLE_STATUS
-    // WL_NO_SSID_AVAIL
-    // WL_SCAN_COMPLETED
-    // WL_CONNECTED
-    // WL_CONNECT_FAILED
-    // WL_CONNECTION_LOST
-    // WL_DISCONNECTED
  
 void loop(){
-    if (WiFi.getMode() == WIFI_MODE_STA) {
+    if (wifi_mode == STA) {
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.println("TELEGRAM");
             if (millis() > lastTimeBotRan + botRequestDelay)  {
                 int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
 
                 while(numNewMessages) {
-                    Serial.println("got response");
+                    Serial.println("Got response from Telegram.");
                     handleNewMessages(numNewMessages);
                     numNewMessages = bot.getUpdates(bot.last_message_received + 1);
                 }
                 lastTimeBotRan = millis();
             }
         }
-        // else if (WiFi.status() == WL_DISCONNECTED) {
-        //     Serial.println("STA mode, but WiFi not connected, enabling AP.");
-        //     setup_wifi_ap_mode();
-        // }
+        else if ((millis() - connection_init) > connection_timeout) {
+            Serial.println("Connection timeout. WiFi in STA mode, but not connected. Enabling AP.");
+            setup_ap = true;
+        }
     }
-    else if (WiFi.getMode() == WIFI_MODE_AP) {
+    else if (wifi_mode == AP) {
         if (!server_on) {
             setup_webserver();
         }
     }
+
     if (WiFi.status() != wifi_status) {
-        Serial.print("WiFi status changed: ");
+        wifi_status = WiFi.status();
         print_wifi_status();
+        if (wifi_status == WL_CONNECTED) {
+            Serial.print("Connected to WiFi network with local IP: ");
+            Serial.println(WiFi.localIP());
+        }
+    }
+
+    if (setup_sta) {
+        setup_wifi_sta_mode();
+    }
+    else if (setup_ap) {
+        setup_wifi_ap_mode();
     }
 }
 
 void setup_wifi_ap_mode() {
+    wifi_mode = AP;
+    Serial.println("Switching to AP mode.");
+
     WiFi.disconnect(); // disable sta mode
-    Serial.println("Creating AP");
+    Serial.println("Creating Access Point...");
     
     WiFi.mode(WIFI_AP);
     WiFi.softAP(ap_ssid, ap_pass);
-    IP = WiFi.softAPIP();
     
-    Serial.print("AP Created with IP Gateway ");
+    WiFi.softAPConfig(IP, IP, NMask);
+    IP = WiFi.softAPIP();
+    Serial.print("AP created with IP gateway: ");
     Serial.println(IP);
+
+    setup_ap = false;
 }
 
 void setup_wifi_sta_mode() {
-    WiFi.softAPdisconnect(); // disable ap mode
+    wifi_mode = STA;
+    Serial.println("Switching to STA mode.");
+
     server.end();
+    WiFi.softAPdisconnect(); // disable ap mode
     server_on = false;
+    Serial.println("Webserver terminated.");
     
-    Serial.println("Connecting to WiFi Network (STA)");
-    
+    Serial.println("Connecting to WiFi Network...");
     WiFi.mode(WIFI_STA);
     WiFi.begin(sta_ssid.c_str(), sta_pass.c_str());
-    
+    connection_init = millis();
+
     #ifdef ESP32
         sta_client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
     #endif
-    
-    while(WiFi.status() != WL_CONNECTED) {
-        Serial.print(".");
-        delay(100);
-    }
-    Serial.print("Connected to WiFi network with local IP : ");
-    Serial.println(WiFi.localIP());
+
+    setup_sta = false;
 }
 
 void print_wifi_status() {
@@ -161,7 +178,7 @@ void print_wifi_status() {
         Serial.println("WiFi connection lost.");
         break;
     case WL_DISCONNECTED:
-        Serial.println("WiFi not connected.");
+        Serial.println("WiFi is not connected.");
         break;
     }
 }
@@ -170,9 +187,9 @@ void setup_webserver() {
     Serial.println("Setting up webserver.");
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/html", index_html);
-        }
-    );
+    });
     server_on = true;
+    Serial.println("Webserver running at 22.23.1.3.");
 
     // Send a GET request to <ESP_IP>/get?input1=<inputMessage>
     server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
@@ -184,26 +201,26 @@ void setup_webserver() {
             inputPASS = request->getParam(PARAM_INPUT_PASS)->value();
             if ((inputSSID == "") || (inputPASS == "")) {
                 Serial.println("Provide both WiFi SSID and password.");
-                request->send(200, "text/html", "Please provide both WiFi SSID and password.<br><a href=\"/\">Return to Home Page</a>");
+                request->send(200, "text/html", "Please provide both WiFi SSID and password.<br><a href=\"/\">Return to home page.</a>");
             }
             else {
+                request->send(200, "text/html", "Connecting to WiFi with SSID: " + inputSSID +
+                                    "<br>Exit this page and go to Telegram bot ta222301001_bot."
+                                    "<br><a href=\"/\">If the bot doesn't respond within 20 seconds, return to this home page.</a>");
                 Serial.print("STA SSID: ");
                 Serial.println(inputSSID);
                 Serial.print("STA PASS: ");
                 Serial.println(inputPASS);
                 sta_ssid = inputSSID;
                 sta_pass = inputPASS;
-                setup_wifi_sta_mode();
+                setup_sta = true;
             }
         }
         else {
             inputSSID = "No SSID";
             inputPASS = "No PASS";
         }
-        request->send(200, "text/html", "Connecting to WiFi with SSID: " + inputSSID +
-                                        "<br><a href=\"/\">Return to Home Page</a>");
-        }
-    );
+    });
     server.onNotFound(notFound);
     server.begin();
 }
@@ -239,8 +256,8 @@ void handleNewMessages(int numNewMessages) {
         }
 
         if (text == "/setup_wifi") {
-        bot.sendMessage(chat_id, "Setup Wifi by connecting to device AP and go to " + String(IP), "");
-        setup_wifi_ap_mode();
+        bot.sendMessage(chat_id, "Setup Wifi by connecting to device WiFi ESP32TA003 and go to: 22.23.1.3", "");
+        setup_ap = true;
         }
     }
 }
