@@ -2,6 +2,8 @@
     "files.associations": {
         "a": "cpp",
         "*.tcc": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "bitset": "cpp",
+        "string_view": "cpp"
     }
 }
