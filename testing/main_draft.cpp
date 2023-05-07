@@ -3,21 +3,13 @@
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 
-#include "BluetoothSerial.h"
 
-#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
-#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
-#endif
-
-
-// ----- DEFINE VARIABLES
-// Interfaces
+// ------ DEFINE VARIABLES --------------------------------------------------------------
+// ------ ALARM & LCD
 #define ALARM_PIN 23 // DIGITAL OUTPUT PIN
-// #define LCD_PIN_SCL 22 // I2C SCL PIN
-// #define LCD_PIN_SDA 21 // I2C SDA PIN
-LiquidCrystal_I2C lcd(0x27, 20, 4);
+LiquidCrystal_I2C lcd(0x27, 20, 4); // // LCD_PIN_SCL 22 - LCD_PIN_SDA 21
 
-// Chamber
+// ------ CHAMBER
 #define AIR_VALVE 5 // DIGITAL OUTPUT PIN WHITE
 #define AERATION_PUMP 19 // RED
 #define WATER_PUMP 32 // YELLOW
@@ -27,25 +19,28 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 #define WATER_SENSOR_LOWER 39 // ADC DAC1
 #define AMMONIA_SENSOR 34 // ADC
 
-// Buttons
+// ------ BUTTONS
 #define ALARM_BUTTON 16 
 #define INC_BUTTON 17
 #define DEC_BUTTON 18
 
-// Other variables
+// ------ OTHER VARIABLES
 #define DEBOUNCE_DELAY 50 // ms
 
-// Main FSM states
+
+// ------ DECLARE VARIABLES -------------------------------------------------------------
+// ------ MAIN FSM
 enum states {NORMAL, ALARM, PASSIVE, INC_THRES_NORMAL, DEC_THRES_NORMAL, INC_THRES_PASSIVE, DEC_THRES_PASSIVE};
 states main_state = NORMAL;
 states main_state_prev = NORMAL;
 
-// Button states for debouncing
+// ------ BUTTON FSM
 enum button_states {NOT_PRESSED, BOUNCE, PRESSED, FALLING_EDGE, RISING_EDGE};
 
 // Alarm button variables
 button_states alarm_button = NOT_PRESSED;
 button_states alarm_button_prev = NOT_PRESSED;
+button_states alarm_button_prev_debug = NOT_PRESSED;
 int alarm_button_val = 0;
 unsigned long alarm_t = 0;
 unsigned long alarm_t0 = 0;
@@ -53,6 +48,7 @@ unsigned long alarm_t0 = 0;
 // Increase button variables
 button_states inc_button = NOT_PRESSED;
 button_states inc_button_prev = NOT_PRESSED;
+button_states inc_button_prev_debug = NOT_PRESSED;
 int inc_button_val = 0;
 unsigned long inc_t = 0;
 unsigned long inc_t0 = 0;
@@ -60,58 +56,35 @@ unsigned long inc_t0 = 0;
 // Decrease button variables
 button_states dec_button = NOT_PRESSED;
 button_states dec_button_prev = NOT_PRESSED;
+button_states dec_button_prev_debug = NOT_PRESSED;
 int dec_button_val = 0;
 unsigned long dec_t = 0;
 unsigned long dec_t0 = 0;
 
-// Trigger button variables
-button_states trig_button = NOT_PRESSED;
-button_states trig_button_prev = NOT_PRESSED;
-int trig_button_val = 0;
-unsigned long trig_t = 0;
-unsigned long trig_t0 = 0;
-
-// Display states
+// ------ DISPLAY FSM
 enum display_states {DISPLAY_IDLE, DISPLAY_UPDATE};
 display_states display_state = DISPLAY_IDLE; 
-
-// Display variables
+display_states display_state_prev = DISPLAY_IDLE; 
 String message = "";
 // unsigned long init_display_time = 0; // ms
 // unsigned long display_time = 0; // ms
 // unsigned long display_delay = 2000; // ms
 
-// Bluetooth variables
-BluetoothSerial SerialBT;
-unsigned long bt_init_time = 0; // ms
-unsigned long bt_send_interval = 10000; // ms
-
-int bt_receive; // data to be received
-String bt_send; // data to be sent
-/*
-Format: current_measurement (4 char) / threshold (3 char) / status (1 char)
-Char code for status
-1 = NORMAL
-2 = ALARM
-3 = PASSIVE
-bt_send example: "1.12 0.05 1"
-*/
-
-// Alarm states
+// ------ ALARM FSM
 enum alarm_states {ALARM_ON, ALARM_OFF};
 alarm_states alarm_state = ALARM_OFF;
 alarm_states alarm_state_prev = ALARM_OFF;
 
-// Chamber states
-enum chamber_states {IDLE, FILL, AERATION, MEASUREMENT, DRAIN};
-chamber_states chamber_state = IDLE;
-chamber_states chamber_state_prev = IDLE;
+// ------ CHAMBER FSM
+enum chamber_states {FILL, AERATION, MEASUREMENT, DRAIN};
+chamber_states chamber_state = FILL;
+chamber_states chamber_state_prev = FILL;
 
-// Chamber variables
 unsigned long aeration_time = 5000; // ms
 unsigned long measure_time = 5000; // ms
 unsigned long init_chamber_time = 0; // ms
 unsigned long chamber_time = 0; // ms, contain time elapsed to control aeration and measure duration
+unsigned long duration = 0; // ms, contain duration of aeration and measurement for testing
 
 float water_height = 0; // cm
 float water_limit_upper = 10; // cm
@@ -120,11 +93,11 @@ float upper_water_sensor_position = 8; // cm, this is the height of the upper se
 float lower_water_sensor_position = 0; // cm, this is the height of the lower sensor placed in chamber
 float water_sensor_length = 5; // cm, this is the max length of water sensor detection
 
-// Measure states
+// ------ MEASURE FSM
 enum measure_states {AVAILABLE, DETECT, CALIBRATE};
 measure_states measure_state = AVAILABLE;
+measure_states measure_state_prev = AVAILABLE;
 
-// Ammonia measurement variables
 float threshold = 0.5; // measured in mg/L or ppm
 bool threshold_change = false; // for display necessities
 
@@ -140,45 +113,36 @@ int measure_count = 0;
 // unsigned long measurement_interval = 1000; // ms
 
 // Test variables
-states test_prev_main_state = NORMAL;
-chamber_states test_prev_chamber_state = IDLE;
-measure_states test_prev_measure_state = AVAILABLE;
+// states test_prev_main_state = NORMAL;
+// chamber_states test_prev_chamber_state = IDLE;
+// measure_states test_prev_measure_state = AVAILABLE;
 
-// ----- DECLARE FUNCTIONS
-// Button FSM functions
-void fsm_alarm_button();
-void fsm_inc_button();
-void fsm_dec_button();
-void fsm_trig_button();
 
-// Main FSM functions
+// ------ DECLARE FUNCTIONS -------------------------------------------------------------
+// ------ MAIN FSM
 void determine_state();
 void FSM();
 
-// Measurement functions
-bool is_above_threshold();
+// ------ BUTTON FSM
+void fsm_alarm_button();
+void fsm_inc_button();
+void fsm_dec_button();
 
-// Display FSM functions
+// ------ DISPLAY FSM
 void fsm_display();
 void lcd_display_status();
 void lcd_display_measurement();
 void lcd_display_threshold();
 void display_message();
 
-// Bluetooth functions
-void app_send_data();
-void prepare_data_send();
-void bt_send_string(String string);
-void bt_button_handler();
-
-// Alarm FSM functions
+// ------ ALARM FSM
 void fsm_alarm();
 void alarm_off();
 void app_sound_off();
 void alarm_on();
 void app_sound_on();
 
-// Chamber FSM functions
+// ------ CHAMBER FSM
 void fsm_chamber();
 void chamber_fill();
 void chamber_aeration();
@@ -188,20 +152,37 @@ void chamber_drain();
 void read_upper_water_height();
 void read_lower_water_height();
 
-// Measure FSM functions
+// ------ MEASURE FSM
+bool is_above_threshold();
 void fsm_measure();
 void read_sensor();
 void calibrate_reading();
 
-// Helper function
-String get_main_state();
-String get_chamber_state();
-String get_measure_state();
+// ------ HELPER FUNCTIONS
+// Other functions
 void lcd_clear_line(int line);
 float mapf(float x, float in_min, float in_max, float out_min, float out_max);
 
+// Debug functions
+void test_main_fsm();
+void test_alarm_button_state();
+void test_inc_button_state();
+void test_dec_button_state();
+void test_display_state();
+void test_alarm_state();
+void test_chamber_state();
+void test_measure_state();
 
-// ----- SETUP
+// Getting states as string
+String get_main_state(states state);
+String get_button_state(button_states state);
+String get_display_state(display_states state);
+String get_alarm_state(alarm_states state);
+String get_chamber_state(chamber_states state);
+String get_measure_state(measure_states state);
+
+
+// ------ SETUP -------------------------------------------------------------------------
 void setup() {
     Serial.begin(115200);
 
@@ -213,11 +194,6 @@ void setup() {
     lcd.setCursor(1, 2);
     lcd.print("MONITORING SYSTEM");
     delay(2000);
-
-    // Serial Bluetooth Initialization
-    SerialBT.begin("ESP32_TA222302003"); // Bluetooth device name
-    Serial.println("Success bluetooth initialization. You can pair device now.");
-    bt_init_time = millis();
 
     // Pins Initialization
     pinMode(ALARM_PIN, OUTPUT);
@@ -237,23 +213,13 @@ void setup() {
 }
 
 
-// ----- LOOP
+// ------ LOOP --------------------------------------------------------------------------
 void loop() {
-
-    // Store previous main state
-    test_prev_main_state = main_state;
 
     // Check and cycle button fsm
     fsm_alarm_button();
     fsm_inc_button();
     fsm_dec_button();
-
-    // Check input from bluetooth
-    if (SerialBT.available()) {
-        bt_button_handler();
-        Serial.print("RECEIVING DATA: ");
-        Serial.println(bt_receive);
-    }
 
     determine_state();
     FSM();
@@ -264,15 +230,24 @@ void loop() {
     
     // Cycle chamber & measure fsm, independent of main fsm states
     fsm_chamber();
-    // Serial.print("Chamber state: ");
-    // Serial.println(get_chamber_state());
-    
     fsm_measure();
+
+    // Debug in serial monitor
+    test_main_fsm();
+    test_alarm_button_state();
+    test_inc_button_state();
+    test_dec_button_state();
+    test_display_state();
+    test_alarm_state();
+    test_chamber_state();
+    test_measure_state();
 }
 
-// ------ HELPER FUNCTIONS
-String get_main_state() {
-    switch (main_state) {
+
+// ------ HELPER FUNCTIONS --------------------------------------------------------------
+// Getting states as string
+String get_main_state(states state) {
+    switch (state) {
         case NORMAL:
             return "NORMAL";
             break;
@@ -296,12 +271,50 @@ String get_main_state() {
             break;
     }
 }
-
-String get_chamber_state() {
-    switch (chamber_state) {
-        case IDLE:
-            return "IDLE";
+String get_button_state(button_states state) {
+    switch (state) {
+        case NOT_PRESSED:
+            return "NOT_PRESSED";
             break;
+        case BOUNCE:
+            return "BOUNCE";
+            break;
+        case PRESSED:
+            return "PRESSED";
+            break;
+        case FALLING_EDGE:
+            return "FALLING_EDGE";
+            break;
+        case RISING_EDGE:
+            return "RISING_EDGE";
+            break;
+    }    
+}
+
+String get_display_state(display_states state) {
+    switch (state) {
+        case DISPLAY_IDLE:
+            return "DISPLAY_IDLE";
+            break;
+        case DISPLAY_UPDATE:
+            return "DISPLAY_UPDATE";
+            break;
+    }
+}
+
+String get_alarm_state(alarm_states state) {
+    switch (state) {
+        case ALARM_ON:
+            return "ALARM_ON";
+            break;
+        case ALARM_OFF:
+            return "ALARM_OFF";
+            break;
+    }
+}
+
+String get_chamber_state(chamber_states state) {
+    switch (state) {
         case FILL:
             return "FILL";
             break;
@@ -317,8 +330,8 @@ String get_chamber_state() {
     }
 }
 
-String get_measure_state() {
-    switch (measure_state) {
+String get_measure_state(measure_states state) {
+    switch (state) {
         case AVAILABLE:
             return "AVAILABLE";
             break;
@@ -331,6 +344,7 @@ String get_measure_state() {
     }
 }
 
+// Helper functions
 void lcd_clear_line(int line) {
     lcd.setCursor(0, line);
     for(int n = 0; n < 20; n++) {
@@ -342,8 +356,93 @@ float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+// Debug functions
+void test_main_fsm() {
+    if (main_state != main_state_prev) {
+        Serial.print("Main FSM state change: ");
+        Serial.print(get_main_state(main_state_prev) + " -> ");
+        Serial.println(get_main_state(main_state));
+    }
+}
 
-// ------ MAIN FSM
+void test_alarm_button_state() {
+    if (alarm_button != alarm_button_prev_debug) {
+        Serial.print("Alarm button state change: ");
+        Serial.println(get_button_state(alarm_button));
+    }
+    alarm_button_prev_debug = alarm_button;
+}
+void test_inc_button_state() {
+    if (inc_button != inc_button_prev_debug) {
+        Serial.print("Increase button state change: ");
+        Serial.println(get_button_state(inc_button));
+    }
+    inc_button_prev_debug = inc_button;
+}
+
+void test_dec_button_state() {
+    if (dec_button != dec_button_prev_debug) {
+        Serial.print("Decrease button state change: ");
+        Serial.println(get_button_state(dec_button));
+    }
+    dec_button_prev_debug = dec_button;
+}
+
+void test_display_state() {
+    if (display_state != display_state_prev) {
+        Serial.print("Display state change: ");
+        Serial.print(get_display_state(display_state_prev) + " -> ");
+        Serial.println(get_display_state(display_state));
+    }
+}
+
+void test_alarm_state() {
+    if (alarm_state != alarm_state_prev) {
+        Serial.print("Alarm state change: ");
+        Serial.print(get_alarm_state(alarm_state_prev) + " -> ");
+        Serial.println(get_alarm_state(alarm_state));
+    }
+}
+
+void test_chamber_state() {
+    if (chamber_state != chamber_state_prev) {
+        Serial.print("Chamber state change: ");
+        Serial.print(get_chamber_state(chamber_state_prev) + " -> ");
+        Serial.println(get_chamber_state(chamber_state));
+        
+        // Chamber cycle order: FILL -> AERATION -> MEASUREMENT -> DRAIN
+        switch (chamber_state) {
+            case FILL:
+            case DRAIN:
+                Serial.print("Water height: ");
+                Serial.println(water_height);
+                break;
+            case AERATION:
+            case MEASUREMENT:
+                Serial.print("Duration: ");
+                Serial.println(duration);
+                break;
+        }
+    }
+}
+
+void test_measure_state() {
+    if (measure_state != measure_state_prev) {
+        Serial.print("Measure state change: ");
+        Serial.print(get_measure_state(measure_state_prev) + " -> ");
+        Serial.println(get_measure_state(measure_state));
+        
+        if (measure_state == AVAILABLE) {
+            Serial.print("Current measurement: ");
+            Serial.println(current_measurement);
+            Serial.print("Measure count: ");
+            Serial.println(measure_count);
+        }
+    }
+    measure_state_prev = measure_state;
+}
+
+// ------ MAIN FSM ----------------------------------------------------------------------
 void determine_state() {
 
     if (alarm_button == FALLING_EDGE) {
@@ -481,17 +580,8 @@ void FSM() {
     }
 }
 
-// ------ MEASUREMENT FUNCTIONS
-bool is_above_threshold() {
-    if (current_measurement >= threshold) {
-        return true;
-    }
-    else { // input < threshold
-        return false;
-    }
-}
 
-// ------ BUTTON FSM
+// ------ BUTTON FSM --------------------------------------------------------------------
 void fsm_alarm_button() {
 
     alarm_button_val = digitalRead(ALARM_BUTTON);
@@ -688,7 +778,7 @@ void fsm_dec_button() {
 }
 
 
-// ----- DISPLAY AND ALARM FUNCTIONS
+// ------ DISPLAY FSM -------------------------------------------------------------------
 void fsm_display() {
     switch (display_state) {
         case DISPLAY_IDLE:
@@ -699,8 +789,10 @@ void fsm_display() {
                 (threshold_change) ||
                 (message != "")
             ) {
+                display_state_prev = display_state;
                 display_state = DISPLAY_UPDATE;
             }
+            display_state_prev = display_state;
             break;
         
         case DISPLAY_UPDATE:
@@ -708,7 +800,7 @@ void fsm_display() {
             lcd_display_measurement();
             lcd_display_threshold();
 
-            app_send_data();
+            // app_send_data();
             
             threshold_change = false;
 
@@ -718,38 +810,20 @@ void fsm_display() {
             main_state_prev = main_state;
             prev_measurement = current_measurement;
 
+            display_state_prev = display_state;
             display_state = DISPLAY_IDLE;
             break;
     }
 }
 
-
-void fsm_alarm() {
-    if (alarm_state != alarm_state_prev) {
-        switch (alarm_state) {
-            case ALARM_OFF:
-                alarm_off();
-                app_sound_off();
-                break;
-            
-            case ALARM_ON:
-                alarm_on();
-                app_sound_on();
-                break;        
-        }
-    }
-}
-
-
-// ----- DISPLAY OUTPUT CONTROL
 void lcd_display_status() {
     Serial.print("[LCD Display] Status: ");
-    Serial.println(get_main_state());
+    Serial.println(get_main_state(main_state));
 
     lcd_clear_line(0);
     lcd.setCursor(0, 0);
     lcd.print("Status: ");
-    lcd.print(get_main_state());
+    lcd.print(get_main_state(main_state));
 }
 
 void lcd_display_measurement() {
@@ -778,6 +852,7 @@ void lcd_display_threshold() {
 
 void display_message() {
     if (message != "") {
+        Serial.print("[LCD Display] ");
         Serial.println(message);
         
         lcd_clear_line(3);
@@ -785,6 +860,7 @@ void display_message() {
         lcd.print(message);
     }
     else {
+        Serial.print("[LCD Display] ");
         Serial.println();
 
         lcd_clear_line(3);
@@ -793,7 +869,7 @@ void display_message() {
 
 void app_display_status() {
     Serial.print("[APP Display] Status: ");
-    Serial.println(get_main_state());
+    Serial.println(get_main_state(main_state));
 }
 
 void app_display_measurement() {
@@ -803,70 +879,28 @@ void app_display_measurement() {
 }
 
 void app_display_threshold() {
-    Serial.print("[LCD Display] Threshold: ");
+    Serial.print("[APP Display] Threshold: ");
     Serial.print(threshold);
     Serial.println(" ppm");
 }
 
-void app_send_data() {
-    // SEND TO ANDROID
-    if (millis() - bt_init_time > bt_send_interval) { // Send data every few seconds
-        prepare_data_send();
-        
-        Serial.print("SENDING DATA: ");
-        Serial.println(bt_send);
-        
-        bt_send_string(bt_send);
-        
-        bt_init_time = millis();
+// ------ ALARM FSM ---------------------------------------------------------------------
+void fsm_alarm() {
+    if (alarm_state != alarm_state_prev) {
+        switch (alarm_state) {
+            case ALARM_OFF:
+                alarm_off();
+                app_sound_off();
+                break;
+            
+            case ALARM_ON:
+                alarm_on();
+                app_sound_on();
+                break;        
+        }
     }
 }
 
-void prepare_data_send() {
-    // Prepare status data
-    String temp_state;
-    if (main_state == NORMAL) {
-        temp_state = "1";
-    }
-    else if (main_state == ALARM) {
-        temp_state = "2";
-    }
-    else if (main_state == PASSIVE) {
-        temp_state = "3";
-    }
-    
-    bt_send = String(current_measurement, 2) + " " + String(threshold, 2) + " " + temp_state;
-}
-
-void bt_send_string(String string) {
-    int i = 0;
-    int count_char = string.length();
-    while (i <= count_char) {
-        char one_char = string[i];
-        SerialBT.write(one_char);
-        i++;
-    }
-}
-
-void bt_button_handler() {
-    bt_receive = SerialBT.read();
-
-    switch (bt_receive) {
-        case 1:
-            alarm_button = FALLING_EDGE;
-            break;
-        case 2:
-            inc_button = FALLING_EDGE;
-            break;
-        case 3:
-            dec_button = FALLING_EDGE;
-            break;
-        default:
-            break;
-    }
-}
-
-// ----- DISPLAY ALARM CONTROL
 void alarm_off() {
     Serial.println("[ALARM Sound] OFF.");
     digitalWrite(ALARM_PIN, LOW);
@@ -886,23 +920,15 @@ void app_sound_on() {
 }
 
 
-// ----- CHAMBER FSM FUNCTIONS
+// ------ CHAMBER FSM -------------------------------------------------------------------
 void fsm_chamber() {
     switch (chamber_state) {
-        case IDLE:
-            // Do nothing
-            test_prev_chamber_state = chamber_state;
-            chamber_state = FILL; // Start chamber from filling
-            break;
-        
+
         case FILL:
+            chamber_state_prev = chamber_state;
             read_upper_water_height();
 
             if (water_height >= water_limit_upper) {
-                Serial.print("Water height: ");
-                Serial.println(water_height);
-                
-                test_prev_chamber_state = chamber_state;
                 chamber_state = AERATION;
                 init_chamber_time = millis();
             }
@@ -911,13 +937,11 @@ void fsm_chamber() {
             break;
         
         case AERATION:
+            chamber_state_prev = chamber_state;
             chamber_time = millis();
 
             if (chamber_time - init_chamber_time > aeration_time) {
-                // Serial.print("Chamber time: ");
-                // Serial.println(chamber_time - init_chamber_time);
-
-                test_prev_chamber_state = chamber_state;
+                duration = chamber_time - init_chamber_time;
                 chamber_state = MEASUREMENT;
                 init_chamber_time = millis();
             }
@@ -926,13 +950,11 @@ void fsm_chamber() {
             break;
         
         case MEASUREMENT:
+            chamber_state_prev = chamber_state;
             chamber_time = millis();
 
             if (chamber_time - init_chamber_time > measure_time) {
-                // Serial.print("Chamber time: ");
-                // Serial.println(chamber_time - init_chamber_time);
-                
-                test_prev_chamber_state = chamber_state;
+                duration = chamber_time - init_chamber_time;
                 chamber_state = DRAIN;
             }
             
@@ -941,13 +963,10 @@ void fsm_chamber() {
             break;
         
         case DRAIN:
+            chamber_state_prev = chamber_state;
             read_lower_water_height();
 
             if (water_height <= water_limit_lower) {
-                Serial.print("Water height: ");
-                Serial.println(water_height);
-
-                test_prev_chamber_state = chamber_state;
                 chamber_state = FILL;
             }
             
@@ -990,7 +1009,7 @@ void chamber_drain() {
 }
 
 
-// ----- CHAMBER MEASUREMENT FUNCTIONS
+// ------ MEASUREMENT FUNCTIONS ---------------------------------------------------------
 void fsm_measure() {
     switch (measure_state) {
         case AVAILABLE:
@@ -1006,7 +1025,7 @@ void fsm_measure() {
         case CALIBRATE:
             calibrate_reading();
             measure_state = AVAILABLE;
-            break;        
+            break;
     }
 }
 
@@ -1038,4 +1057,13 @@ void read_lower_water_height() {
     water_height = mapf(
         water_height, 0, 4095,
         lower_water_sensor_position, (lower_water_sensor_position + water_sensor_length));
+}
+
+bool is_above_threshold() {
+    if (current_measurement >= threshold) {
+        return true;
+    }
+    else { // input < threshold
+        return false;
+    }
 }
