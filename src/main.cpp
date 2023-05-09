@@ -145,6 +145,7 @@ bool server_on = false;
 const char* PARAM_INPUT_SSID = "inputssid";
 const char* PARAM_INPUT_PASS = "inputpass";
 const char* PARAM_INPUT_CHATID = "inputchatid";
+const char* PARAM_INPUT_REPORTINTERVAL = "inputreportinterval";
 
 // HTML web page to handle ssid and password input fields
 const char index_html[] PROGMEM = R"rawliteral(
@@ -153,9 +154,10 @@ const char index_html[] PROGMEM = R"rawliteral(
     <meta name="viewport" content="width=device-width, initial-scale=1">
     </head><body>
     <form action="/get">
-        SSID: <input type="text" name="inputssid"><br>
-        Password: <input type="text" name="inputpass"><br>
+        WiFi SSID: <input type="text" name="inputssid"><br>
+        WiFi Password: <input type="password" name="inputpass"><br>
         Telegram Chat ID: <input type="text" name="inputchatid"><br>
+        Jeda Laporan Rutin (Dalam Detik):  <input type="text" name="inputreportinterval"><br>
         <input type="submit" value="Submit">
     </form>
     </body></html>)rawliteral";
@@ -174,9 +176,9 @@ unsigned long connection_timeout = 15000; // ms
 // ------ TELEGRAM
 UniversalTelegramBot bot(BOTtoken, sta_client);
 
-// Checks for new messages every 1 second.
-int botRequestDelay = 30000;
-unsigned long lastTimeBotRan;
+// Checks for new messages every several second.
+int bot_report_interval; // Input via webserver
+unsigned long last_bot_report;
 String user_chat_id; // telegram user chat id 
 // String telegram_users[MAX_TELEGRAM_USERS];
 
@@ -201,9 +203,7 @@ void display_message();
 // ------ ALARM FSM
 void fsm_alarm();
 void alarm_off();
-void app_sound_off();
 void alarm_on();
-void app_sound_on();
 
 // ------ CHAMBER FSM
 void fsm_chamber();
@@ -230,7 +230,7 @@ void notFound(AsyncWebServerRequest *request);
 void setup_wifi_sta_mode();
 void print_wifi_status();
 
-void handleNewMessages(int numNewMessages);
+void check_telegram_bot();
 
 // ------ HELPER FUNCTIONS
 // Other functions
@@ -265,7 +265,7 @@ void setup() {
     lcd.init();
     lcd.backlight();
     lcd.setCursor(5, 1);
-    lcd.print("FISHPOND");
+    lcd.print("AMMONIA");
     lcd.setCursor(1, 2);
     lcd.print("MONITORING SYSTEM");
     delay(2000);
@@ -549,6 +549,7 @@ void determine_state() {
     }
 
     if (inc_button == FALLING_EDGE) {
+        hold_init = millis(); // begin counting hold duration
         if (main_state == NORMAL) {
             main_state_prev = main_state;
             main_state = INC_THRES_NORMAL;
@@ -559,6 +560,15 @@ void determine_state() {
         }
         else {
             message = "MATIKAN ALARM";
+        }
+    }
+
+    if (inc_button == PRESSED) {
+        if ((millis() - hold_init) > hold_duration) {
+            if (wifi_mode == STA) { // Setup AP only if wifi is in STA mode
+                wifi_mode = SETUP_AP;
+                threshold -= 0.1; // decrement threshold back to invalidate increase button press
+            }
         }
     }
 
@@ -772,7 +782,6 @@ void fsm_inc_button() {
         case FALLING_EDGE:
             if (inc_button_val == 0) { // button is held down
                 inc_button = PRESSED;
-                hold_init = millis(); // begin counting hold duration
             }
             else { // button is released
                 inc_button_prev = PRESSED;
@@ -788,12 +797,6 @@ void fsm_inc_button() {
                 inc_button = BOUNCE;
                 inc_t0 = inc_t;
                 inc_t = millis();
-            }
-            if ((millis() - hold_init) > hold_duration) {
-                if (wifi_mode == STA) { // Setup AP only if wifi is in STA mode
-                    wifi_mode = SETUP_AP;
-                    threshold -= 0.1; // decrement threshold back to invalidate increase button press
-                }
             }
             break;
         
@@ -899,8 +902,6 @@ void fsm_display() {
             lcd_display_measurement();
             lcd_display_threshold();
 
-            // app_send_data();
-            
             threshold_change = false;
 
             display_message();
@@ -966,56 +967,27 @@ void display_message() {
     }
 }
 
-void app_display_status() {
-    Serial.print("[APP Display] Status: ");
-    Serial.println(get_main_state(main_state));
-}
-
-void app_display_measurement() {
-    Serial.print("[APP Display] Ammonia: ");
-    Serial.print(current_measurement);
-    Serial.println(" ppm");
-}
-
-void app_display_threshold() {
-    Serial.print("[APP Display] Threshold: ");
-    Serial.print(threshold);
-    Serial.println(" ppm");
-}
-
 // ------ ALARM FSM ---------------------------------------------------------------------
 void fsm_alarm() {
     if (alarm_state != alarm_state_prev) {
         switch (alarm_state) {
             case ALARM_OFF:
                 alarm_off();
-                app_sound_off();
                 break;
             
             case ALARM_ON:
                 alarm_on();
-                app_sound_on();
                 break;        
         }
     }
 }
 
 void alarm_off() {
-    Serial.println("[ALARM Sound] OFF.");
     digitalWrite(ALARM_PIN, LOW);
 }
 
-void app_sound_off() {
-    Serial.println("[APP Sound] OFF.");
-}
-
 void alarm_on() {
-    Serial.println("[ALARM Sound] ON.");
     digitalWrite(ALARM_PIN, HIGH);
-}
-
-void app_sound_on() {
-    Serial.println("[APP Sound] ON.");
 }
 
 
@@ -1182,37 +1154,7 @@ void fsm_wifi() {
             break;
         case STA:
             if (wifi_status == WL_CONNECTED) {
-                if (millis() > lastTimeBotRan + botRequestDelay)  {
-                    // int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-
-                    // while(numNewMessages) {
-                    //     Serial.println("Got response from Telegram.");
-                    //     handleNewMessages(numNewMessages);
-                    //     numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-                    // }
-                    String state_msg = "SCHEDULED REPORT.\n\n";
-                    state_msg += "Current measurement: ";
-                    state_msg += String(current_measurement, 3);
-                    state_msg += "\nThreshold: ";
-                    state_msg += String(threshold, 3);
-                    state_msg += "\nState: ";
-                    state_msg += get_main_state(main_state);
-                    bot.sendMessage(user_chat_id, state_msg, "");
-                    lastTimeBotRan = millis();
-                }
-                if (main_state != main_state_prev) {
-                    if (main_state == ALARM) {
-                        String state_msg = "ALERT !!!\nReporting state.\n\n";
-                        state_msg += "Current measurement: ";
-                        state_msg += String(current_measurement, 3);
-                        state_msg += "\nThreshold: ";
-                        state_msg += String(threshold, 3);
-                        state_msg += "\nState: ";
-                        state_msg += get_main_state(main_state);
-                        bot.sendMessage(user_chat_id, state_msg, "");
-                    }
-                }
-                
+                check_telegram_bot();
             }
             else if ((millis() - connection_init) > connection_timeout) {
                 Serial.println("Connection timeout. WiFi in STA mode, but not connected. Enabling AP.");
@@ -1293,29 +1235,40 @@ void setup_webserver() {
 
     // Send a GET request to <ESP_IP>/get?input1=<inputMessage>
     server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
+        
         String inputSSID;
         String inputPASS;
         String inputCHATID;
+        String inputREPORTINTERVAL;
+        
         // GET value on <ESP_IP>/get?input1=<inputMessage>
-        if ((request->hasParam(PARAM_INPUT_SSID)) && (request->hasParam(PARAM_INPUT_PASS)) && (request->hasParam(PARAM_INPUT_CHATID))) {
+        if ((request->hasParam(PARAM_INPUT_SSID)) && (request->hasParam(PARAM_INPUT_PASS)) 
+         && (request->hasParam(PARAM_INPUT_CHATID)) && (request->hasParam(PARAM_INPUT_REPORTINTERVAL))) {
+            
             inputSSID = request->getParam(PARAM_INPUT_SSID)->value();
             inputPASS = request->getParam(PARAM_INPUT_PASS)->value();
             inputCHATID = request->getParam(PARAM_INPUT_CHATID)->value();
-            if ((inputSSID == "") || (inputPASS == "") || (inputCHATID == "")) {
-                Serial.println("Provide both WiFi SSID and password, and your Telegram chat ID.");
-                request->send(200, "text/html", "Please provide both WiFi SSID and password, and your Telegram chat ID.<br><a href=\"/\">Return to home page.</a>");
+            inputREPORTINTERVAL = request->getParam(PARAM_INPUT_REPORTINTERVAL)->value();
+            
+            if ((inputSSID == "") || (inputPASS == "") || (inputCHATID == "") || (inputREPORTINTERVAL == "")) {
+                Serial.println("Masukkan SSID WiFi, kata sandi WiFi, Telegram chat ID, dan jeda laporan rutin yang diinginkan.");
+                request->send(200, "text/html", "<p style=\"font-size:30px;\">Masukkan SSID WiFi, kata sandi WiFi, Telegram chat ID, dan jeda laporan rutin yang diinginkan.</p><br><a href=\"/\">Return to home page.</a>");
             }
             else {
-                request->send(200, "text/html", "Connecting to WiFi with SSID: " + inputSSID +
-                                    "<br>Exit this page and go to Telegram bot ta222301001_bot."
-                                    "<br><a href=\"/\">If the bot doesn't respond within 20 seconds, return to this home page.</a>");
+                request->send(200, "text/html", "<p style=\"font-size:30px;\">Menghubungkan ke WiFi dengan SSID: " + inputSSID +
+                                    "<br>Keluar dari laman ini dan chat bot Telegram ta222301001_bot.</p>"
+                                    "<br><a style=\"color:blue;font-size:30px;\" href=\"/\">Jika bot tidak merespon setelah 20 detik, hubungkan ke WiFi alat dan kembali ke laman ini.</a>");
+                
                 Serial.print("STA SSID: ");
                 Serial.println(inputSSID);
                 Serial.print("STA PASS: ");
                 Serial.println(inputPASS);
+                
                 sta_ssid = inputSSID;
                 sta_pass = inputPASS;
                 user_chat_id = inputCHATID;
+                bot_report_interval = inputREPORTINTERVAL.toInt() * 1000; // Convert from secs to ms
+                
                 wifi_mode = SETUP_STA;
             }
         }
@@ -1330,46 +1283,30 @@ void setup_webserver() {
 }
 
 // ------ TELEGRAM FUNCTIONS ------------------------------------------------------------
-void handleNewMessages(int numNewMessages) {
-    Serial.println("handleNewMessages");
-    Serial.println(String(numNewMessages));
+void check_telegram_bot() {
+    if (millis() > last_bot_report + bot_report_interval)  {
+        String state_msg = "LAPORAN RUTIN.\n\n";
+        state_msg += "Kadar amonia: ";
+        state_msg += String(current_measurement, 3);
+        state_msg += " ppm\nBatas amonia: ";
+        state_msg += String(threshold, 3);
+        state_msg += " ppm\nStatus: ";
+        state_msg += get_main_state(main_state);
 
-    for (int i=0; i<numNewMessages; i++) {
-        // Chat id of the requester
-        String chat_id = String(bot.messages[i].chat_id);
-        if (chat_id != user_chat_id) {
-            bot.sendMessage(chat_id, "Unauthorized user", "");
-            continue;
-        }
+        bot.sendMessage(user_chat_id, state_msg, "");
+        last_bot_report = millis();
+    }
 
-        // Print the received message
-        String text = bot.messages[i].text;
-        Serial.println(text);
-
-        String from_name = bot.messages[i].from_name;
-
-        if (text == "/subscribe") {
-            String welcome = "Welcome, " + from_name + ".\n";
-            welcome += "You are now subscribed to receive reports for ammonia monitoring system.\n\n";
-            welcome += "/state to request current device state\n";
-            welcome += "/setup_wifi to setup WiFi SSID and password\n";
-            bot.sendMessage(chat_id, welcome, "");
-        }
-
-        if (text == "/state") {
-            String state_msg = "Reporting state.\n\n";
-            state_msg += "Current measurement: ";
+    if (main_state != main_state_prev) {
+        if (main_state == ALARM) {
+            String state_msg = "PERINGATAN !!!\nAmonia melebihi batas.\n\n";
+            state_msg += "Kadar amonia: ";
             state_msg += String(current_measurement, 3);
-            state_msg += "\nThreshold: ";
+            state_msg += " ppm\nBatas amonia: ";
             state_msg += String(threshold, 3);
-            state_msg += "\nState: ";
+            state_msg += " ppm\nStatus: ";
             state_msg += get_main_state(main_state);
-            bot.sendMessage(chat_id, state_msg, "");
-        }
-
-        if (text == "/setup_wifi") {
-        bot.sendMessage(chat_id, "Setup Wifi by connecting to device WiFi ESP32TA003 and go to: 22.23.1.3", "");
-        wifi_mode = SETUP_AP;
+            bot.sendMessage(user_chat_id, state_msg, "");
         }
     }
 }
