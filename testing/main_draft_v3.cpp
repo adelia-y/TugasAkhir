@@ -19,10 +19,10 @@
 LiquidCrystal_I2C lcd(0x27, 20, 4); // // LCD_PIN_SCL 22 - LCD_PIN_SDA 21
 
 // ------ CHAMBER
-#define VALVE_SERVO 5 // PWM OUTPUT PIN WHITE
-#define AERATION_PUMP 19 // DIGITAL OUTPUT RED
-#define FILL_PUMP_VALVE 32 // DIGITAL OUTPUT YELLOW
-#define DRAIN_PUMP_VALVE 33 // DIGITAL OUTPUT GREEN
+#define VALVE_SERVO 5 // DIGITAL OUTPUT PIN WHITE
+#define AERATION_PUMP 19 // RED
+#define FILL_PUMP_VALVE 32 // YELLOW
+#define DRAIN_PUMP_VALVE 33 // GREEN
 
 #define WATER_SENSOR_UPPER 36 // ADC DAC0
 #define WATER_SENSOR_LOWER 39 // ADC DAC1
@@ -84,6 +84,9 @@ enum display_states {DISPLAY_IDLE, DISPLAY_UPDATE};
 display_states display_state = DISPLAY_IDLE; 
 display_states display_state_prev = DISPLAY_IDLE; 
 String message = "";
+// unsigned long init_display_time = 0; // ms
+// unsigned long display_time = 0; // ms
+// unsigned long display_delay = 2000; // ms
 
 // ------ ALARM FSM
 enum alarm_states {ALARM_ON, ALARM_OFF};
@@ -95,11 +98,8 @@ enum chamber_states {FILL, AERATION, MEASUREMENT, DRAIN};
 chamber_states chamber_state = FILL;
 chamber_states chamber_state_prev = FILL;
 
-unsigned long aeration_time = 20000; // ms
+unsigned long aeration_time = 5000; // ms
 unsigned long measure_time = 5000; // ms
-unsigned long drain_time = 10000; // ms, draining time in case lower water sensor not used
-bool use_drain_time = true;
-
 unsigned long init_chamber_time = 0; // ms
 unsigned long chamber_time = 0; // ms, contain time elapsed to control aeration and measure duration
 unsigned long duration = 0; // ms, contain duration of aeration and measurement for testing
@@ -113,6 +113,7 @@ float water_sensor_length = 5; // cm, this is the max length of water sensor det
 
 Servo myservo;
 int servo_pos = 0;
+
 
 // ------ MEASURE FSM
 enum measure_states {AVAILABLE, DETECT, CALIBRATE};
@@ -131,6 +132,7 @@ float calibrated_measurement = 0;
 float current_measurement = 0;
 float prev_measurement = 0;
 int measure_count = 0;
+// unsigned long measurement_interval = 1000; // ms
 
 // ------ WIFI
 enum wifi_modes {STA, AP, SETUP_AP, SETUP_STA};
@@ -184,6 +186,7 @@ UniversalTelegramBot bot(BOTtoken, sta_client);
 int bot_report_interval; // Input via webserver
 unsigned long last_bot_report;
 String user_chat_id; // telegram user chat id 
+// String telegram_users[MAX_TELEGRAM_USERS];
 
 
 // ------ DECLARE FUNCTIONS -------------------------------------------------------------
@@ -217,9 +220,6 @@ void chamber_drain();
 
 void read_upper_water_height();
 void read_lower_water_height();
-
-void servo_open();
-void servo_close();
 
 // ------ MEASURE FSM
 bool is_above_threshold();
@@ -283,7 +283,7 @@ void setup() {
     pinMode(INC_BUTTON, INPUT_PULLUP);
     pinMode(DEC_BUTTON, INPUT_PULLUP);
 
-    // pinMode(VALVE_SERVO, OUTPUT);
+    pinMode(VALVE_SERVO, OUTPUT);
     pinMode(AERATION_PUMP, OUTPUT);
     pinMode(FILL_PUMP_VALVE, OUTPUT);
     pinMode(DRAIN_PUMP_VALVE, OUTPUT);
@@ -295,15 +295,6 @@ void setup() {
     // Wifi AP Initialization
     wifi_mode = SETUP_AP;
     wifi_status = WiFi.status();
-
-    // Servo Initialization
-    ESP32PWM::allocateTimer(0); // allocation of all timers
-	ESP32PWM::allocateTimer(1);
-	ESP32PWM::allocateTimer(2);
-	ESP32PWM::allocateTimer(3);
-	myservo.setPeriodHertz(50); // standard 50 hz servo
-	myservo.attach(VALVE_SERVO, 500, 2400); // setup servo min max
-
 }
 
 
@@ -510,15 +501,10 @@ void test_chamber_state() {
         // Chamber cycle order: FILL -> AERATION -> MEASUREMENT -> DRAIN
         switch (chamber_state) {
             case FILL:
+            case DRAIN:
                 Serial.print("Water height: ");
                 Serial.println(water_height);
                 break;
-            case DRAIN:
-                if (!use_drain_time) {
-                    Serial.print("Water height: ");
-                    Serial.println(water_height);
-                    break;
-                }
             case AERATION:
             case MEASUREMENT:
                 Serial.print("Duration: ");
@@ -1017,10 +1003,6 @@ void fsm_chamber() {
     switch (chamber_state) {
 
         case FILL:
-            if (chamber_state != chamber_state_prev) {
-                chamber_fill();
-            }
-
             chamber_state_prev = chamber_state;
             read_upper_water_height();
 
@@ -1029,13 +1011,10 @@ void fsm_chamber() {
                 init_chamber_time = millis();
             }
 
+            chamber_fill();
             break;
         
         case AERATION:
-            if (chamber_state != chamber_state_prev) {
-                chamber_aeration();
-            }
-
             chamber_state_prev = chamber_state;
             chamber_time = millis();
 
@@ -1045,45 +1024,31 @@ void fsm_chamber() {
                 init_chamber_time = millis();
             }
 
+            chamber_aeration();
             break;
         
         case MEASUREMENT:
-            if (chamber_state != chamber_state_prev) {
-                chamber_measure();
-            }
-            
             chamber_state_prev = chamber_state;
             chamber_time = millis();
 
             if (chamber_time - init_chamber_time > measure_time) {
                 duration = chamber_time - init_chamber_time;
                 chamber_state = DRAIN;
-                init_chamber_time = millis();
             }
             
+            chamber_measure();
             measure_state = DETECT;
             break;
         
         case DRAIN:
-            if (chamber_state != chamber_state_prev) {
-                chamber_drain();
-            }
-            
             chamber_state_prev = chamber_state;
+            read_lower_water_height();
 
-            if (use_drain_time) {
-                if (chamber_time - init_chamber_time > drain_time) {
-                    duration = chamber_time - init_chamber_time;
-                    chamber_state = FILL;
-                }
-            }
-            else {
-                read_lower_water_height();
-                if (water_height <= water_limit_lower) {
-                    chamber_state = FILL;
-                }
+            if (water_height <= water_limit_lower) {
+                chamber_state = FILL;
             }
             
+            chamber_drain();
             measure_state = CALIBRATE;
             break;
     }
@@ -1092,8 +1057,7 @@ void fsm_chamber() {
 // VALVES ARE NORMALLY CLOSED
 void chamber_fill() {
     // Chamber filling procedure    
-    // digitalWrite(VALVE_SERVO, LOW); // Air valve closed
-    servo_close();
+    digitalWrite(VALVE_SERVO, LOW); // Air valve closed
     digitalWrite(AERATION_PUMP, LOW); // Aeration pump turned off
     digitalWrite(FILL_PUMP_VALVE, HIGH); // Water fill pump on, valve open
     digitalWrite(DRAIN_PUMP_VALVE, LOW); // Water drain pump off, valve closed
@@ -1101,7 +1065,7 @@ void chamber_fill() {
 
 void chamber_aeration() {
     // Chamber aeration procedure    
-    // digitalWrite(VALVE_SERVO, LOW); // Air valve closed
+    digitalWrite(VALVE_SERVO, LOW); // Air valve closed
     digitalWrite(AERATION_PUMP, HIGH); // Aeration pump turned on
     digitalWrite(FILL_PUMP_VALVE, LOW); // Water fill pump off, valve closed
     digitalWrite(DRAIN_PUMP_VALVE, LOW); // Water drain pump off, valve closed
@@ -1109,7 +1073,7 @@ void chamber_aeration() {
 
 void chamber_measure() {
     // Chamber measurement procedure
-    // digitalWrite(VALVE_SERVO, LOW); // Air valve closed
+    digitalWrite(VALVE_SERVO, LOW); // Air valve closed
     digitalWrite(AERATION_PUMP, LOW); // Aeration pump turned off
     digitalWrite(FILL_PUMP_VALVE, LOW); // Water fill pump off, valve closed
     digitalWrite(DRAIN_PUMP_VALVE, LOW); // Water drain pump off, valve closed
@@ -1117,25 +1081,10 @@ void chamber_measure() {
 
 void chamber_drain() {
     // Chamber draining procedure
-    // digitalWrite(VALVE_SERVO, HIGH); // Air valve open, release chamber air
-    servo_open();
+    digitalWrite(VALVE_SERVO, HIGH); // Air valve open, release chamber air
     digitalWrite(AERATION_PUMP, LOW); // Aeration pump turned off
     digitalWrite(FILL_PUMP_VALVE, LOW); // Water fill pump off, valve closed
     digitalWrite(DRAIN_PUMP_VALVE, HIGH); // Water drain pump on, valve open
-}
-
-void servo_open() {
-	for (servo_pos = 0; servo_pos <= 90; servo_pos += 1) {
-		Serial.println("Moving servo from 0 to 90 degree.");
-        myservo.write(servo_pos);
-	}
-}
-
-void servo_close() {
-	for (servo_pos = 90; servo_pos >= 0; servo_pos -= 1) {
-		Serial.println("Moving servo from 90 to 0 degree.");
-        myservo.write(servo_pos);
-	}
 }
 
 
