@@ -1,10 +1,14 @@
 /*
- * Program to measure gas in ppm using MQ sensor
- * Program by: B.Aswinth Raj
- * Website: www.circuitdigest.com
- * Dated: 28-12-2017
- */
 
+ * Program to measure gas in ppm using MQ sensor
+
+ * Program by: B.Aswinth Raj
+
+ * Website: www.circuitdigest.com
+
+ * Dated: 28-12-2017
+
+ */
 #include <Arduino.h>
 
 #define RL 47  //The value of resistor RL is 47K
@@ -24,17 +28,11 @@ void setup() {
 
 void loop() {
 
-    float analog_value;
     float VRL; //Voltage drop across the MQ sensor
     float Rs; //Sensor resistance at gas concentration 
     float ratio; //Define variable for ratio
 
-    for (int test_cycle = 1 ; test_cycle <= 500 ; test_cycle++) {
-        analog_value = analog_value + analogRead(AMMONIA_SENSOR); //add the values for 200
-    }
-    
-    analog_value = analog_value/500.0; //Take average
-    
+
     VRL = analogRead(AMMONIA_SENSOR)*(5.0/1023.0); //Measure the voltage drop and convert to 0-5V
     Rs = ((5.0*RL)/VRL)-RL; //Use formula to get Rs value
     ratio = Rs/Ro;  // find ratio Rs/Ro
