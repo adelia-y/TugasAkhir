@@ -33,8 +33,8 @@ void loop() {
     float ratio; //Define variable for ratio
 
 
-    VRL = analogRead(AMMONIA_SENSOR)*(5.0/1023.0); //Measure the voltage drop and convert to 0-5V
-    Rs = ((5.0*RL)/VRL)-RL; //Use formula to get Rs value
+    VRL = analogRead(AMMONIA_SENSOR)*(3.3/4095.0); //Measure the voltage drop and convert to 0-5V
+    Rs = ((3.3*RL)/VRL)-RL; //Use formula to get Rs value
     ratio = Rs/Ro;  // find ratio Rs/Ro
     
     float ppm = pow(10, ((log10(ratio)-b)/m)); //use formula to calculate ppm
