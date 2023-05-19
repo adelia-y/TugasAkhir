@@ -17,10 +17,12 @@
 #define Ro 20 //Enter found Ro value
 
 #define AMMONIA_SENSOR 34 //Sensor is connected to A4
+#define AERATION_PUMP 19 // DIGITAL OUTPUT RED
 
 void setup() {
     Serial.begin(115200);
     pinMode(AMMONIA_SENSOR, INPUT);
+    pinMode(AERATION_PUMP, OUTPUT);
 
     delay(2000); //Wait for display to show info
 }
@@ -41,5 +43,7 @@ void loop() {
     Serial.print("NH3 (ppm) = "); //Display a ammonia in ppm
     Serial.println(ppm);
 
+    // test aerator
+    digitalWrite(AERATION_PUMP, HIGH);
     delay(1000);
 }
