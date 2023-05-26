@@ -1148,34 +1148,34 @@ void chamber_fill() {
     // Chamber filling procedure    
     // digitalWrite(VALVE_SERVO, LOW); // Air valve closed
     servo_close();
-    digitalWrite(AERATION_PUMP, LOW); // Aeration pump turned off
-    digitalWrite(FILL_PUMP_VALVE, HIGH); // Water fill pump on, valve open
-    digitalWrite(DRAIN_PUMP_VALVE, LOW); // Water drain pump off, valve closed
+    digitalWrite(AERATION_PUMP, HIGH); // Aeration pump turned off
+    digitalWrite(FILL_PUMP_VALVE, LOW); // Water fill pump on, valve open
+    digitalWrite(DRAIN_PUMP_VALVE, HIGH); // Water drain pump off, valve closed
 }
 
 void chamber_aeration() {
     // Chamber aeration procedure    
     // digitalWrite(VALVE_SERVO, LOW); // Air valve closed
-    digitalWrite(AERATION_PUMP, HIGH); // Aeration pump turned on
-    digitalWrite(FILL_PUMP_VALVE, LOW); // Water fill pump off, valve closed
-    digitalWrite(DRAIN_PUMP_VALVE, LOW); // Water drain pump off, valve closed
+    digitalWrite(AERATION_PUMP, LOW); // Aeration pump turned on
+    digitalWrite(FILL_PUMP_VALVE, HIGH); // Water fill pump off, valve closed
+    digitalWrite(DRAIN_PUMP_VALVE, HIGH); // Water drain pump off, valve closed
 }
 
 void chamber_measure() {
     // Chamber measurement procedure
     // digitalWrite(VALVE_SERVO, LOW); // Air valve closed
-    digitalWrite(AERATION_PUMP, LOW); // Aeration pump turned off
-    digitalWrite(FILL_PUMP_VALVE, LOW); // Water fill pump off, valve closed
-    digitalWrite(DRAIN_PUMP_VALVE, LOW); // Water drain pump off, valve closed
+    digitalWrite(AERATION_PUMP, HIGH); // Aeration pump turned off
+    digitalWrite(FILL_PUMP_VALVE, HIGH); // Water fill pump off, valve closed
+    digitalWrite(DRAIN_PUMP_VALVE, HIGH); // Water drain pump off, valve closed
 }
 
 void chamber_drain() {
     // Chamber draining procedure
     // digitalWrite(VALVE_SERVO, HIGH); // Air valve open, release chamber air
     servo_open();
-    digitalWrite(AERATION_PUMP, LOW); // Aeration pump turned off
-    digitalWrite(FILL_PUMP_VALVE, LOW); // Water fill pump off, valve closed
-    digitalWrite(DRAIN_PUMP_VALVE, HIGH); // Water drain pump on, valve open
+    digitalWrite(AERATION_PUMP, HIGH); // Aeration pump turned off
+    digitalWrite(FILL_PUMP_VALVE, HIGH); // Water fill pump off, valve closed
+    digitalWrite(DRAIN_PUMP_VALVE, LOW); // Water drain pump on, valve open
 }
 
 void servo_open() {
