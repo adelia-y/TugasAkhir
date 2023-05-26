@@ -1057,11 +1057,11 @@ void fsm_alarm() {
 }
 
 void alarm_off() {
-    digitalWrite(ALARM_PIN, LOW);
+    digitalWrite(ALARM_PIN, HIGH);
 }
 
 void alarm_on() {
-    digitalWrite(ALARM_PIN, HIGH);
+    digitalWrite(ALARM_PIN, LOW);
 }
 
 
