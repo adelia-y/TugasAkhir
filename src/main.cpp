@@ -331,6 +331,10 @@ void setup() {
 // ------ LOOP --------------------------------------------------------------------------
 void loop() {
 
+    // Serial.print("Test Loop Cycle: ");
+    // Serial.println(millis());
+    // Serial.println(" ms");
+
     if (do_calibrate_sensor) {
         if (!begin_calibration_done) {
             begin_sensor_calibration();
@@ -794,8 +798,8 @@ void fsm_alarm_button() {
             else { // button is released
                 alarm_button_prev = PRESSED;
                 alarm_button = BOUNCE;
-                alarm_t0 = alarm_t;
-                alarm_t = millis();
+                alarm_t0 = millis();
+                // alarm_t = millis();
             }
             break;
 
@@ -803,8 +807,8 @@ void fsm_alarm_button() {
             if (alarm_button_val == 1) { // button is released
                 alarm_button_prev = PRESSED;
                 alarm_button = BOUNCE;
-                alarm_t0 = alarm_t;
-                alarm_t = millis();
+                alarm_t0 = millis();
+                // alarm_t = millis();
             }
             break;
         
@@ -815,10 +819,17 @@ void fsm_alarm_button() {
             else { // button is pressed again
                 alarm_button_prev = NOT_PRESSED;
                 alarm_button = BOUNCE;
-                alarm_t0 = alarm_t;
-                alarm_t = millis();
+                alarm_t0 = millis();
+                // alarm_t = millis();
             }
             break;
+    }
+
+    if (alarm_button != alarm_button_prev_debug) {
+        Serial.print("ALARM BUTTON: ");
+        Serial.println(get_button_state(alarm_button));
+        Serial.println(millis());
+        alarm_button_prev_debug = alarm_button;
     }
 }
 // REF: https://fastbitlab.com/fsm-lecture-30-exercise-003-button-software-debouncing-implementation/
@@ -860,8 +871,8 @@ void fsm_inc_button() {
             else { // button is released
                 inc_button_prev = PRESSED;
                 inc_button = BOUNCE;
-                inc_t0 = inc_t;
-                inc_t = millis();
+                inc_t0 = millis();
+                // inc_t = millis();
             }
             break;
 
@@ -869,8 +880,8 @@ void fsm_inc_button() {
             if (inc_button_val == 1) { // button is released
                 inc_button_prev = PRESSED;
                 inc_button = BOUNCE;
-                inc_t0 = inc_t;
-                inc_t = millis();
+                inc_t0 = millis();
+                // inc_t = millis();
             }
             break;
         
@@ -881,10 +892,16 @@ void fsm_inc_button() {
             else { // button is pressed again
                 inc_button_prev = NOT_PRESSED;
                 inc_button = BOUNCE;
-                inc_t0 = inc_t;
-                inc_t = millis();
+                inc_t0 = millis();
+                // inc_t = millis();
             }
             break;
+    }
+    if (inc_button != inc_button_prev_debug) {
+        Serial.print("INCREASE BUTTON: ");
+        Serial.println(get_button_state(inc_button));
+        Serial.println(millis());
+        inc_button_prev_debug = inc_button;
     }
 }
 
@@ -925,8 +942,8 @@ void fsm_dec_button() {
             else { // button is released
                 dec_button_prev = PRESSED;
                 dec_button = BOUNCE;
-                dec_t0 = dec_t;
-                dec_t = millis();
+                dec_t0 = millis();
+                // dec_t = millis();
             }
             break;
 
@@ -934,8 +951,8 @@ void fsm_dec_button() {
             if (dec_button_val == 1) { // button is released
                 dec_button_prev = PRESSED;
                 dec_button = BOUNCE;
-                dec_t0 = dec_t;
-                dec_t = millis();
+                dec_t0 = millis();
+                // dec_t = millis();
             }
             break;
         
@@ -946,10 +963,16 @@ void fsm_dec_button() {
             else { // button is pressed again
                 dec_button_prev = NOT_PRESSED;
                 dec_button = BOUNCE;
-                dec_t0 = dec_t;
-                dec_t = millis();
+                dec_t0 = millis();
+                // dec_t = millis();
             }
             break;
+    }
+    if (dec_button != dec_button_prev_debug) {
+        Serial.print("DECREASE BUTTON: ");
+        Serial.println(get_button_state(dec_button));
+        Serial.println(millis());
+        dec_button_prev_debug = dec_button;
     }
 }
 
