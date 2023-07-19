@@ -27,6 +27,12 @@ float sum = 0;
 float average = 0;
 int count_sample = 0;
 
+// regression parameters
+float regression_m = 1.16;
+float regression_c = 82.50;
+float regression_y =  0;
+float regression_x = 0;
+
 int median(float* a, int l, int r);
 void IQR(float* a, int n);
 
@@ -92,9 +98,14 @@ void loop()
     }
   }
   average = sum / count_sample;
-  Serial.print(average);
-  Serial.println(" PPM");
   //mics.sleepMode();
+
+  // calibrate using regression constants
+  regression_x = average;
+  regression_y = (regression_m * regression_x) + regression_c;
+
+  Serial.print(regression_y);
+  Serial.println(" PPM");
 }
 
 // Function to give index of the median
